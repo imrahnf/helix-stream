@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  titancache:
+    build: ../../services/titancache
+    ports:
+      - "8080:8080" # REST
+      - "6379:6379" # TCP Socket
+    networks:
+      - helix-net
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: helix_db
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    networks:
+      - helix-net
+
+networks:
+  helix-net:
+    driver: bridge
