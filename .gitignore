@@ -1,3 +1,23 @@
+# IDEs
+.idea/
+*.iml
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+
+# Java / Maven
+target/
+*.class
+.mvn/
+
+# HelixStream Specific
+services/gateway/gen/
+
 infra/docker/data/
 __init__.py
 

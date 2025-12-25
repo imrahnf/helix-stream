@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+option java_multiple_files = true; // CRITICAL: Generates separate files
+package com.titancache.grpc;
+
+service CacheService {
+  rpc Put (CacheEntry) returns (EmptyResponse);
+  rpc Get (KeyRequest) returns (ValueResponse);
+  rpc Clear (EmptyRequest) returns (EmptyResponse);
+}
+
+message CacheEntry {
+  string key = 1;
+  string value = 2;
+}
+
+message KeyRequest {
+  string key = 1;
+}
+
+message ValueResponse {
+  string value = 1;
+  bool found = 2;
+}
+
+message EmptyRequest {}
+message EmptyResponse {
+  string message = 1;
+}
