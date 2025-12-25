@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x63\x61\x63he.proto\x12\x13\x63om.titancache.grpc\"(\n\nCacheEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\"\x19\n\nKeyRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\"-\n\rValueResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"\x0e\n\x0c\x45mptyRequest\" \n\rEmptyResponse\x12\x0f\n\x07message\x18\x01 \x01(\t2\xf6\x01\n\x0c\x43\x61\x63heService\x12J\n\x03Put\x12\x1f.com.titancache.grpc.CacheEntry\x1a\".com.titancache.grpc.EmptyResponse\x12J\n\x03Get\x12\x1f.com.titancache.grpc.KeyRequest\x1a\".com.titancache.grpc.ValueResponse\x12N\n\x05\x43lear\x12!.com.titancache.grpc.EmptyRequest\x1a\".com.titancache.grpc.EmptyResponseB\x02P\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x63\x61\x63he.proto\x12\x13\x63om.titancache.grpc\"&\n\x0cLeaseRequest\x12\x16\n\x0emax_batch_size\x18\x01 \x01(\x05\"\x1d\n\rLeaseResponse\x12\x0c\n\x04keys\x18\x01 \x03(\t\"t\n\x0b\x42\x61tchResult\x12\x37\n\x07results\x18\x01 \x03(\x0b\x32&.com.titancache.grpc.BatchResult.Entry\x1a,\n\x05\x45ntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x16\n\x0e\x65mbedding_json\x18\x02 \x01(\t\"(\n\nCacheEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\"\x19\n\nKeyRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\"-\n\rValueResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"\x0e\n\x0c\x45mptyRequest\" \n\rEmptyResponse\x12\x0f\n\x07message\x18\x01 \x01(\t2\xf3\x03\n\x0c\x43\x61\x63heService\x12J\n\x03Put\x12\x1f.com.titancache.grpc.CacheEntry\x1a\".com.titancache.grpc.EmptyResponse\x12J\n\x03Get\x12\x1f.com.titancache.grpc.KeyRequest\x1a\".com.titancache.grpc.ValueResponse\x12N\n\x05\x43lear\x12!.com.titancache.grpc.EmptyRequest\x1a\".com.titancache.grpc.EmptyResponse\x12Q\n\nSubmitTask\x12\x1f.com.titancache.grpc.KeyRequest\x1a\".com.titancache.grpc.EmptyResponse\x12S\n\nLeaseTasks\x12!.com.titancache.grpc.LeaseRequest\x1a\".com.titancache.grpc.LeaseResponse\x12S\n\x0bSubmitBatch\x12 .com.titancache.grpc.BatchResult\x1a\".com.titancache.grpc.EmptyResponseB\x02P\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,16 +32,24 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'cache_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'P\001'
-  _globals['_CACHEENTRY']._serialized_start=36
-  _globals['_CACHEENTRY']._serialized_end=76
-  _globals['_KEYREQUEST']._serialized_start=78
-  _globals['_KEYREQUEST']._serialized_end=103
-  _globals['_VALUERESPONSE']._serialized_start=105
-  _globals['_VALUERESPONSE']._serialized_end=150
-  _globals['_EMPTYREQUEST']._serialized_start=152
-  _globals['_EMPTYREQUEST']._serialized_end=166
-  _globals['_EMPTYRESPONSE']._serialized_start=168
-  _globals['_EMPTYRESPONSE']._serialized_end=200
-  _globals['_CACHESERVICE']._serialized_start=203
-  _globals['_CACHESERVICE']._serialized_end=449
+  _globals['_LEASEREQUEST']._serialized_start=36
+  _globals['_LEASEREQUEST']._serialized_end=74
+  _globals['_LEASERESPONSE']._serialized_start=76
+  _globals['_LEASERESPONSE']._serialized_end=105
+  _globals['_BATCHRESULT']._serialized_start=107
+  _globals['_BATCHRESULT']._serialized_end=223
+  _globals['_BATCHRESULT_ENTRY']._serialized_start=179
+  _globals['_BATCHRESULT_ENTRY']._serialized_end=223
+  _globals['_CACHEENTRY']._serialized_start=225
+  _globals['_CACHEENTRY']._serialized_end=265
+  _globals['_KEYREQUEST']._serialized_start=267
+  _globals['_KEYREQUEST']._serialized_end=292
+  _globals['_VALUERESPONSE']._serialized_start=294
+  _globals['_VALUERESPONSE']._serialized_end=339
+  _globals['_EMPTYREQUEST']._serialized_start=341
+  _globals['_EMPTYREQUEST']._serialized_end=355
+  _globals['_EMPTYRESPONSE']._serialized_start=357
+  _globals['_EMPTYRESPONSE']._serialized_end=389
+  _globals['_CACHESERVICE']._serialized_start=392
+  _globals['_CACHESERVICE']._serialized_end=891
 # @@protoc_insertion_point(module_scope)

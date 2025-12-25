@@ -49,6 +49,21 @@ class CacheServiceStub(object):
                 request_serializer=cache__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=cache__pb2.EmptyResponse.FromString,
                 _registered_method=True)
+        self.SubmitTask = channel.unary_unary(
+                '/com.titancache.grpc.CacheService/SubmitTask',
+                request_serializer=cache__pb2.KeyRequest.SerializeToString,
+                response_deserializer=cache__pb2.EmptyResponse.FromString,
+                _registered_method=True)
+        self.LeaseTasks = channel.unary_unary(
+                '/com.titancache.grpc.CacheService/LeaseTasks',
+                request_serializer=cache__pb2.LeaseRequest.SerializeToString,
+                response_deserializer=cache__pb2.LeaseResponse.FromString,
+                _registered_method=True)
+        self.SubmitBatch = channel.unary_unary(
+                '/com.titancache.grpc.CacheService/SubmitBatch',
+                request_serializer=cache__pb2.BatchResult.SerializeToString,
+                response_deserializer=cache__pb2.EmptyResponse.FromString,
+                _registered_method=True)
 
 
 class CacheServiceServicer(object):
@@ -72,6 +87,25 @@ class CacheServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SubmitTask(self, request, context):
+        """Worker Methods
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def LeaseTasks(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SubmitBatch(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CacheServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -88,6 +122,21 @@ def add_CacheServiceServicer_to_server(servicer, server):
             'Clear': grpc.unary_unary_rpc_method_handler(
                     servicer.Clear,
                     request_deserializer=cache__pb2.EmptyRequest.FromString,
+                    response_serializer=cache__pb2.EmptyResponse.SerializeToString,
+            ),
+            'SubmitTask': grpc.unary_unary_rpc_method_handler(
+                    servicer.SubmitTask,
+                    request_deserializer=cache__pb2.KeyRequest.FromString,
+                    response_serializer=cache__pb2.EmptyResponse.SerializeToString,
+            ),
+            'LeaseTasks': grpc.unary_unary_rpc_method_handler(
+                    servicer.LeaseTasks,
+                    request_deserializer=cache__pb2.LeaseRequest.FromString,
+                    response_serializer=cache__pb2.LeaseResponse.SerializeToString,
+            ),
+            'SubmitBatch': grpc.unary_unary_rpc_method_handler(
+                    servicer.SubmitBatch,
+                    request_deserializer=cache__pb2.BatchResult.FromString,
                     response_serializer=cache__pb2.EmptyResponse.SerializeToString,
             ),
     }
@@ -171,6 +220,87 @@ class CacheService(object):
             target,
             '/com.titancache.grpc.CacheService/Clear',
             cache__pb2.EmptyRequest.SerializeToString,
+            cache__pb2.EmptyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SubmitTask(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/com.titancache.grpc.CacheService/SubmitTask',
+            cache__pb2.KeyRequest.SerializeToString,
+            cache__pb2.EmptyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def LeaseTasks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/com.titancache.grpc.CacheService/LeaseTasks',
+            cache__pb2.LeaseRequest.SerializeToString,
+            cache__pb2.LeaseResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SubmitBatch(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/com.titancache.grpc.CacheService/SubmitBatch',
+            cache__pb2.BatchResult.SerializeToString,
             cache__pb2.EmptyResponse.FromString,
             options,
             channel_credentials,

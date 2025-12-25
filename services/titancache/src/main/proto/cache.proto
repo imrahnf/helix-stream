@@ -7,6 +7,27 @@ service CacheService {
   rpc Put (CacheEntry) returns (EmptyResponse);
   rpc Get (KeyRequest) returns (ValueResponse);
   rpc Clear (EmptyRequest) returns (EmptyResponse);
+
+  // Worker Methods
+  rpc SubmitTask (KeyRequest) returns (EmptyResponse);
+  rpc LeaseTasks (LeaseRequest) returns (LeaseResponse);
+  rpc SubmitBatch (BatchResult) returns (EmptyResponse);
+}
+
+message LeaseRequest {
+  int32 max_batch_size = 1; // Worker asks for up to N tasks
+}
+
+message LeaseResponse {
+  repeated string keys = 1; // List of sequence hashes to process
+}
+
+message BatchResult {
+  message Entry {
+    string key = 1;
+    string embedding_json = 2;
+  }
+  repeated Entry results = 1;
 }
 
 message CacheEntry {

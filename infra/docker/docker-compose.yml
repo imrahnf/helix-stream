@@ -1,21 +1,47 @@
 services:
-  postgres:
+  # --- CONTROL PLANE (Always on Mac) ---
+  db:
     image: pgvector/pgvector:pg16
-    container_name: helix_db
-    environment:
-      POSTGRES_DB: helix_db
-      POSTGRES_USER: dev_user
-      POSTGRES_PASSWORD: dev_password
     ports:
       - "5433:5432"
-    volumes:
-      - helix_postgres_data:/var/lib/postgresql/data
+    profiles: ["control", "full"]
+    environment:
+      POSTGRES_DB: helix_db
+    networks:
+      - helix-net
+
+  gateway:
+    build: ./services/gateway
+    profiles: ["control", "full"]
+    ports:
+      - "8000:8000"
+    environment:
+      - TITAN_CACHE_HOST=${TITAN_IP:-titancache}
+    networks:
+      - helix-net
+
+  # --- DATA PLANE (Offloadable to Windows) ---
+  titancache:
+    build: ./services/titancache
+    profiles: ["compute", "full"]
+    ports:
+      - "9090:9090" # gRPC
+      - "8081:8081" # REST Stats
+    networks:
+      - helix-net
+
+  inference-worker:
+    build: ./services/workers
+    profiles: ["compute", "full"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: rocm # Use 'rocm' for AMD RX 6800 or 'nvidia' for CUDA
+              count: all
     networks:
       - helix-net
 
 networks:
   helix-net:
     driver: bridge
-
-volumes:
-  helix_postgres_data:
