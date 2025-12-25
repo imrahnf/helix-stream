@@ -1,3 +1,4 @@
+# apps/api/main.py
 from fastapi import FastAPI, BackgroundTasks
 import hashlib
 import sys
@@ -7,22 +8,23 @@ from titan_client import TitanClient
 
 app = FastAPI(title="HelixStream Gateway")
 
-# Load config from .env
+# Load .env config 
 TITAN_HOST = os.getenv("TITAN_HOST", "localhost")
 TITAN_PORT = int(os.getenv("TITAN_PORT", 6379))
 
 @app.post("/analyze")
-async def analyze_sequence(sequence: str, background_tasks: BackgroundTasks):
-    # Generate SHA-256
+async def analyze_sequence(sequence: str):
     seq_hash = hashlib.sha256(sequence.encode()).hexdigest()
     
-    # Check Cache 
     with TitanClient(host=TITAN_HOST, port=TITAN_PORT) as client:
-        cached_result = client.get(seq_hash)
-        if cached_result:
-            return {"status": "CACHED", "hash": seq_hash, "data": cached_result}
+        cached_val = client.get(seq_hash)
         
-        # Cache Miss: Queue task
+        if cached_val and cached_val != "null":
+            return {"status": "CACHED", "hash": seq_hash, "data": cached_val}
+
+        # Handl;e MISS
+        # Queue the task for the worker to find later
+        print(f"Cache Miss- Queuing task:{seq_hash[:8]}")
         client.set(f"task:{seq_hash}", sequence)
     
-    return {"status": "QUEUED", "hash": seq_hash, "message": "Sequence sent to cluster."}
+    return {"status": "QUEUED", "hash": seq_hash}

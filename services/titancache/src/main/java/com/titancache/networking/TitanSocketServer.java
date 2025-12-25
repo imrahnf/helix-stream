@@ -22,7 +22,7 @@ public class TitanSocketServer {
     public void start() {
         new Thread(() -> {
             try (ServerSocket serverSocket = new ServerSocket(port)) {
-                System.out.println("🚀 Titan TCP Server listening on port " + port);
+                System.out.println("Titan TCP Server listening on port " + port);
                 while (true) {
                     Socket clientSocket = serverSocket.accept();
                     new Thread(new ClientHandler(clientSocket, cache)).start();
@@ -50,6 +50,8 @@ class ClientHandler implements Runnable {
 
             String line;
             while ((line = in.readLine()) != null) {
+                System.out.println("Received Command: " + line);
+
                 String[] parts = line.split(" ", 3);
                 String cmd = parts[0].toUpperCase();
 
