@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 
 @Component
 public class TitanSocketServer {
@@ -28,15 +29,15 @@ public class TitanSocketServer {
                     new Thread(new ClientHandler(clientSocket, cache)).start();
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                System.err.println("Server error: " + e.getMessage());
             }
         }).start();
     }
 }
 
 class ClientHandler implements Runnable {
-    private Socket socket;
-    private TitanCache<String, String> cache;
+    private final Socket socket;
+    private final TitanCache<String, String> cache;
 
     public ClientHandler(Socket socket, TitanCache<String, String> cache) {
         this.socket = socket;
@@ -45,27 +46,52 @@ class ClientHandler implements Runnable {
 
     @Override
     public void run() {
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
+        try (DataInputStream in = new DataInputStream(socket.getInputStream());
+             DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
 
-            String line;
-            while ((line = in.readLine()) != null) {
-                System.out.println("Received Command: " + line);
+            while (true) {
+                int length;
+                try {
+                    length = in.readInt();
+                } catch (EOFException e) {
+                    break; // Client closed connection normally
+                }
 
-                String[] parts = line.split(" ", 3);
+                // Read exactly length bytes for the payload
+                byte[] payload = new byte[length];
+                in.readFully(payload);
+                String message = new String(payload, StandardCharsets.UTF_8);
+                System.out.println("Received: " + message);
+
+                // Parse command using colon delimiter
+                String[] parts = message.split(":", 3);
                 String cmd = parts[0].toUpperCase();
+                String responseText;
 
                 switch (cmd) {
-                    case "GET" -> out.println(cache.get(parts[1]));
-                    case "SET" -> {
-                        cache.put(parts[1], parts[2]);
-                        out.println("OK");
+                    case "VERSION" -> responseText = "OK";
+                    case "CHECK" -> {
+                        String val = cache.get(parts[1]);
+                        responseText = (val != null) ? "HIT:" + val : "MISS"; //
                     }
-                    default -> out.println("ERROR: UNKNOWN COMMAND");
+                    case "SET", "ENQUEUE" -> {
+                        cache.put(parts[1], parts[2]);
+                        responseText = "OK";
+                    }
+                    case "PING" -> responseText = "PONG";
+                    default -> responseText = "ERR_UNKNOWN"; //
                 }
+
+                // Send length prefixed response
+                byte[] responseBytes = responseText.getBytes(StandardCharsets.UTF_8);
+                out.writeInt(responseBytes.length);
+                out.write(responseBytes);
+                out.flush();
             }
         } catch (IOException e) {
-            System.err.println("Client disconnected.");
+            System.err.println("Client handler error: " + e.getMessage());
+        } finally {
+            try { socket.close(); } catch (IOException ignored) {}
         }
     }
 }

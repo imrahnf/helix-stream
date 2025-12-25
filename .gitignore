@@ -1,3 +1,4 @@
+infra/docker/data/
 __init__.py
 
 # Byte-compiled / optimized / DLL files
