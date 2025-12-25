@@ -11,14 +11,13 @@ async def analyze_sequence(sequence: str):
     seq_hash = hashlib.sha256(sequence.encode()).hexdigest()
     result = await orchestrator.get_embedding(seq_hash)
     
-    # Check if the Orchestrator returned an error (e.g., Engine Offline)
+    # Check if the Orchestrator returned an error
     if result["status"] == "error":
         raise HTTPException(status_code=503, detail=result["message"])
 
-    # Map the Orchestrator result to the response
     return {
         "hash": seq_hash,
-        "status": result["status"].upper(), # Standardize to 'PENDING', 'HIT', or 'ERROR'
+        "status": result["status"].upper(),
         "source": result.get("source"),
         "embedding": result.get("data")
     }

@@ -4,7 +4,6 @@ import os
 import grpc
 import logging
 
-# Dynamically resolve 'gen' path for gRPC stubs
 current_dir = os.path.dirname(os.path.abspath(__file__))
 gen_path = os.path.normpath(os.path.join(current_dir, "../../gen"))
 sys.path.append(gen_path)
@@ -17,13 +16,12 @@ except ImportError:
     raise
 
 class HelixOrchestrator:
-    def __init__(self, host="localhost", port="9090"):
+    def __init__(self, host=os.getenv("TITAN_CACHE_HOST", "localhost"), port="9090"):
         # Initialize the gRPC connection to the Java Memory Engine
         self.channel = grpc.insecure_channel(f"{host}:{port}")
         self.stub = cache_pb2_grpc.CacheServiceStub(self.channel)
         logging.info(f"Connected to TitanCache gRPC on {host}:{port}")
 
-    # Update in app/core/orchestrator.py
     async def get_embedding(self, seq_hash: str):
         try:
             request = cache_pb2.KeyRequest(key=seq_hash)

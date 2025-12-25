@@ -1,44 +1,82 @@
 services:
-  # --- CONTROL PLANE (Always on Mac) ---
+  # L2 Database
   db:
     image: pgvector/pgvector:pg16
+    container_name: helix_db
     ports:
       - "5433:5432"
-    profiles: ["control", "full"]
+    profiles: ["macos", "full"]
     environment:
-      POSTGRES_DB: helix_db
+      POSTGRES_USER: helix_admin
+      POSTGRES_PASSWORD: helix_password
+      POSTGRES_DB: helix_stream
+    volumes:
+      - ./helix_db_data:/var/lib/postgresql/data
     networks:
       - helix-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helix_admin -d helix_stream"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  # Control Plane (Gateway)
   gateway:
-    build: ./services/gateway
-    profiles: ["control", "full"]
+    build: 
+      context: ../../
+      dockerfile: services/gateway/Dockerfile
+    container_name: helix_gateway
+    profiles: ["macos", "full"]
     ports:
       - "8000:8000"
     environment:
-      - TITAN_CACHE_HOST=${TITAN_IP:-titancache}
+      - TITAN_CACHE_HOST=${TITAN_IP:-helix_titancache}
+      - DATABASE_URL=postgresql://helix_admin:helix_password@db:5432/helix_stream
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - helix-net
 
-  # --- DATA PLANE (Offloadable to Windows) ---
+  # L1 Cache
   titancache:
-    build: ./services/titancache
-    profiles: ["compute", "full"]
+    build: 
+      context: ../../services/titancache
+    container_name: helix_titancache
+    profiles: ["windows", "full"]
     ports:
-      - "9090:9090" # gRPC
-      - "8081:8081" # REST Stats
+      - "9090:9090"
+      - "8081:8081"
     networks:
       - helix-net
 
-  inference-worker:
-    build: ./services/workers
-    profiles: ["compute", "full"]
+  # CPU Mode (MacBook)
+  worker-cpu:
+    build: 
+      context: ../../services/workers
+    container_name: helix_worker_cpu
+    profiles: ["full"]
+    environment:
+      - MODE=CPU
+    networks:
+      - helix-net
+
+  # GPU Mode (Windows/ROCm)
+  worker-gpu:
+    build: 
+      context: ../../services/workers
+    container_name: helix_worker_gpu
+    # ONLY runs on Windows Compute Node
+    profiles: ["windows"]
+    environment:
+      - MODE=GPU_ROCM
     deploy:
       resources:
         reservations:
           devices:
-            - driver: rocm # Use 'rocm' for AMD RX 6800 or 'nvidia' for CUDA
+            - driver: rocm
               count: all
+              capabilities: ["gpu"]
     networks:
       - helix-net
 
