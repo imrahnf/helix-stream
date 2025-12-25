@@ -69,14 +69,14 @@ services:
     # ONLY runs on Windows Compute Node
     profiles: ["windows"]
     environment:
-      - MODE=GPU_ROCM
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: rocm
-              count: all
-              capabilities: ["gpu"]
+      - MODE=CPU # MODE=GPU_ROCM not yet supported
+    #  deploy:
+    #    resources:
+    #      reservations:
+    #        devices:
+    #          - driver: rocm
+    #            count: all
+    #            capabilities: ["gpu"]
     networks:
       - helix-net
 
