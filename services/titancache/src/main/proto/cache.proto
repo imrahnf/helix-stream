@@ -1,25 +1,45 @@
 syntax = "proto3";
 
-option java_multiple_files = true; // CRITICAL: Generates separate files
+option java_multiple_files = true;
 package com.titancache.grpc;
 
 service CacheService {
+  // Cache Operations
   rpc Put (CacheEntry) returns (EmptyResponse);
   rpc Get (KeyRequest) returns (ValueResponse);
   rpc Clear (EmptyRequest) returns (EmptyResponse);
 
-  // Worker Methods
+  // Worker Operations
   rpc SubmitTask (KeyRequest) returns (EmptyResponse);
   rpc LeaseTasks (LeaseRequest) returns (LeaseResponse);
   rpc SubmitBatch (BatchResult) returns (EmptyResponse);
 }
 
+message KeyRequest {
+  string key = 1;       // SHA-256
+  string model_id = 2;  // eg "esm2_t33_650M_UR50D"
+}
+
+message ValueResponse {
+  string value = 1;         // JSON Embedding
+  bool found = 2;
+  string model_id = 3;
+  string created_at = 4;    // ISO timestamp
+}
+
+message CacheEntry {
+  string key = 1;
+  string value = 2;
+  string model_id = 3;
+}
+
 message LeaseRequest {
-  int32 max_batch_size = 1; // Worker asks for up to N tasks
+  int32 max_batch_size = 1;
+  string target_model_id = 2; // Workers only lease tasks they can handle
 }
 
 message LeaseResponse {
-  repeated string keys = 1; // List of sequence hashes to process
+  repeated string keys = 1;
 }
 
 message BatchResult {
@@ -28,20 +48,7 @@ message BatchResult {
     string embedding_json = 2;
   }
   repeated Entry results = 1;
-}
-
-message CacheEntry {
-  string key = 1;
-  string value = 2;
-}
-
-message KeyRequest {
-  string key = 1;
-}
-
-message ValueResponse {
-  string value = 1;
-  bool found = 2;
+  string model_id = 2;      // Model that processed the batch
 }
 
 message EmptyRequest {}

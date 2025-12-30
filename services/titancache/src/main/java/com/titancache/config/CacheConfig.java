@@ -15,7 +15,7 @@ public class CacheConfig {
     private int maxEntrySizeBytes;
 
     @Bean
-    public TitanCache<String, String> titanCache() {
-        return new TitanCache<>(capacity, maxEntrySizeBytes);
+    public TitanCache titanCache() {
+        return new TitanCache(capacity, maxEntrySizeBytes);
     }
 }

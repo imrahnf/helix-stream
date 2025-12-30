@@ -10,54 +10,65 @@ import org.slf4j.LoggerFactory;
 @GrpcService
 public class CacheGrpcService extends CacheServiceGrpc.CacheServiceImplBase {
     private static final Logger logger = LoggerFactory.getLogger(CacheGrpcService.class);
-    private final TitanCache<String, String> cache;
+    private final TitanCache cache;
 
-    public CacheGrpcService(TitanCache<String, String> cache) {
+    public CacheGrpcService(TitanCache cache) {
         this.cache = cache;
     }
 
     @Override
     public void submitTask(KeyRequest request, StreamObserver<EmptyResponse> responseObserver) {
-        logger.debug("📥 gRPC SUBMIT_TASK: {}", request.getKey());
-        cache.submitTask(request.getKey());
+        // Enforce Model ID presence
+        if (request.getModelId().isEmpty()) {
+            logger.warn("Rejected SubmitTask: missing model_id");
+            responseObserver.onError(new IllegalArgumentException("model_id is required"));
+            return;
+        }
+
+        cache.submitTask(request.getKey(), request.getModelId());
         responseObserver.onNext(EmptyResponse.newBuilder().setMessage("Queued").build());
         responseObserver.onCompleted();
     }
 
     @Override
+    public void get(KeyRequest request, StreamObserver<ValueResponse> responseObserver) {
+        String val = cache.get(request.getKey(), request.getModelId());
+
+        ValueResponse.Builder builder = ValueResponse.newBuilder()
+                .setFound(val != null)
+                .setModelId(request.getModelId());
+
+        if (val != null) {
+            builder.setValue(val);
+        }
+
+        responseObserver.onNext(builder.build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
     public void put(CacheEntry request, StreamObserver<EmptyResponse> responseObserver) {
-        logger.debug("📥 gRPC PUT: {}", request.getKey());
-        cache.put(request.getKey(), request.getValue());
+        cache.put(request.getKey(), request.getModelId(), request.getValue());
         responseObserver.onNext(EmptyResponse.newBuilder().setMessage("Stored").build());
         responseObserver.onCompleted();
     }
 
     @Override
-    public void get(KeyRequest request, StreamObserver<ValueResponse> responseObserver) {
-        logger.debug("📥 gRPC GET: {}", request.getKey());
-        String val = cache.get(request.getKey());
-        ValueResponse response = ValueResponse.newBuilder()
-                .setValue(val != null ? val : "")
-                .setFound(val != null)
-                .build();
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
-    }
-
-    @Override
     public void leaseTasks(LeaseRequest request, StreamObserver<LeaseResponse> responseObserver) {
-        logger.debug("📥 gRPC LEASE_TASKS: count={}", request.getMaxBatchSize());
-        var keys = cache.leaseTasks(request.getMaxBatchSize());
+        var keys = cache.leaseTasks(request.getMaxBatchSize(), request.getTargetModelId());
+
+        // Wwe return the composites "hash:model_id"
         responseObserver.onNext(LeaseResponse.newBuilder().addAllKeys(keys).build());
         responseObserver.onCompleted();
     }
 
     @Override
     public void submitBatch(BatchResult request, StreamObserver<EmptyResponse> responseObserver) {
-        logger.info("📥 gRPC SUBMIT_BATCH: size={}", request.getResultsCount());
+        String modelId = request.getModelId();
         for (var entry : request.getResultsList()) {
-            cache.put(entry.getKey(), entry.getEmbeddingJson());
-            cache.resolveTask(entry.getKey());
+            // The key here is gonna be likely the RAW hash from the worker
+            cache.put(entry.getKey(), modelId, entry.getEmbeddingJson());
+            cache.resolveTask(entry.getKey(), modelId);
         }
         responseObserver.onNext(EmptyResponse.newBuilder().setMessage("Batch Processed").build());
         responseObserver.onCompleted();
@@ -65,7 +76,6 @@ public class CacheGrpcService extends CacheServiceGrpc.CacheServiceImplBase {
 
     @Override
     public void clear(EmptyRequest request, StreamObserver<EmptyResponse> responseObserver) {
-        logger.info("📥 gRPC CLEAR");
         cache.clear();
         responseObserver.onNext(EmptyResponse.newBuilder().setMessage("Cleared").build());
         responseObserver.onCompleted();

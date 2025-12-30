@@ -70,7 +70,8 @@ class CacheServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Put(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Cache Operations
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -88,7 +89,7 @@ class CacheServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def SubmitTask(self, request, context):
-        """Worker Methods
+        """Worker Operations
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

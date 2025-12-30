@@ -12,3 +12,6 @@ starlette==0.50.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.40.0
+grpcio==1.76.0
+grpcio-tools==1.76.0
+protobuf==6.33.2

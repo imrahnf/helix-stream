@@ -1,38 +1,82 @@
 # services/gateway/app/core/orchestrator.py
-import sys
 import os
+import sys
 import grpc
 import logging
+import hashlib
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-gen_path = os.path.normpath(os.path.join(current_dir, "../../gen"))
-sys.path.append(gen_path)
+from app.db.repository import DatabaseContext
 
-try:
-    import cache_pb2
-    import cache_pb2_grpc
-except ImportError:
-    logging.error(f"Could not find gRPC stubs in {gen_path}")
-    raise
+import cache_pb2
+import cache_pb2_grpc
 
 class HelixOrchestrator:
-    def __init__(self, host=os.getenv("TITAN_CACHE_HOST", "localhost"), port="9090"):
-        # Initialize the gRPC connection to the Java Memory Engine
-        self.channel = grpc.insecure_channel(f"{host}:{port}")
-        self.stub = cache_pb2_grpc.CacheServiceStub(self.channel)
-        logging.info(f"Connected to TitanCache gRPC on {host}:{port}")
+    def __init__(self):
+            host = os.getenv("TITAN_CACHE_HOST", "localhost")
+            port = "9090"
+            self.db_url = os.getenv("DATABASE_URL")
+            
+            # Connect to TitanCache
+            self.channel = grpc.insecure_channel(f"{host}:{port}")
+            self.stub = cache_pb2_grpc.CacheServiceStub(self.channel)
+            
+            # TODO: Default model (change this to become dynamic later)
+            self.DEFAULT_MODEL = "esm2_t33_650M_UR50D"
 
-    async def get_embedding(self, seq_hash: str):
+    def _generate_hash(self, sequence: str) -> str:
+        return hashlib.sha256(sequence.encode()).hexdigest()
+
+    async def analyze_sequence(self, sequence: str):
+        seq_hash = self._generate_hash(sequence)
+        model_id = self.DEFAULT_MODEL
+        
+        # Fetch from L1 cache (TitanCache)
         try:
-            request = cache_pb2.KeyRequest(key=seq_hash)
+            request = cache_pb2.KeyRequest(key=seq_hash, model_id=model_id)
             response = self.stub.Get(request)
             
             if response.found:
-                return {"status": "hit", "source": "L1_TITAN_CACHE", "data": response.value}
-            
-            self.stub.SubmitTask(cache_pb2.KeyRequest(key=seq_hash)) 
-            return {"status": "pending", "message": "Task queued for GPU workers"}
-                
+                return {
+                    "status" : "COMPLETED",
+                    "source" : "L1_CACHE",
+                    "model" : response.model_id,
+                    "data" : response.value
+                }
         except grpc.RpcError as e:
-            logging.error(f"gRPC Communication Error: {e.code()} - {e.details()}")
-            return {"status": "error", "message": "Memory Engine Unreachable"}
+            print(f"L1 Cache Unavailables: {e}")
+        
+        # L2 DB (Postgres)
+        with DatabaseContext(self.db_url) as repo:
+            # Check for existing data
+            record = repo.get_embedding(seq_hash, model_id)
+            if record:
+                # TODO: Populate L1 from L2
+                return {
+                    "status": "COMPLETED", 
+                    "source": "L2_STORE", 
+                    "model": model_id,
+                    "data": record['vector']
+                }
+            
+            # Check for pending job
+            status = repo.get_job_status(seq_hash, model_id)
+            if status:
+                return {
+                    "status": status, 
+                    "source": "JOB_QUEUE", 
+                    "model": model_id
+                }
+            
+            # Trigger New Work
+            repo.create_job(seq_hash, model_id)
+            # Tell TitanCache to queue this for workers
+            try:
+                self.stub.SubmitTask(cache_pb2.KeyRequest(key=seq_hash, model_id=model_id))
+            except grpc.RpcError:
+                logging.error("Failed to submit task to TitanCache")
+
+            return {
+                "status": "PENDING", 
+                "source": "NEW_JOB", 
+                "model": model_id
+            }
