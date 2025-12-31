@@ -16,13 +16,10 @@ public class TitanCache {
 
     private final int capacity;
     private final int maxEntrySizeBytes;
-
     private final Map<String, CacheNode<String, StoredValue>> map;
-
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final CacheNode<String, StoredValue> head;
     private final CacheNode<String, StoredValue> tail;
-
     private final BlockingQueue<TaskEntry> taskQueue = new LinkedBlockingQueue<>();
     private final Map<String, Long> activeLeases = new ConcurrentHashMap<>();
 
@@ -33,7 +30,6 @@ public class TitanCache {
         this.capacity = capacity;
         this.maxEntrySizeBytes = maxEntrySizeBytes;
         this.map = new HashMap<>();
-        // Sentinels
         this.head = new CacheNode<>(null, null);
         this.tail = new CacheNode<>(null, null);
         head.next = tail;
@@ -46,6 +42,7 @@ public class TitanCache {
 
     public void submitTask(String hash, String sequence, String modelId) {
         String composite = compositeKey(hash, modelId);
+        System.out.println("DEBUG: submitTask for key [" + composite + "]");
         if (map.containsKey(composite) || activeLeases.containsKey(composite)) return;
         TaskEntry entry = new TaskEntry(hash, sequence, modelId);
         if (!taskQueue.contains(entry)) {
@@ -74,6 +71,8 @@ public class TitanCache {
         String composite = compositeKey(hash, modelId);
         StoredValue storedVal = new StoredValue(valueJson, confidence);
 
+        System.out.println("DEBUG PUT -> CompositeKey: [" + composite + "]");
+
         lock.writeLock().lock();
         try {
             if (map.containsKey(composite)) {
@@ -99,14 +98,20 @@ public class TitanCache {
 
     public StoredValue get(String hash, String modelId) {
         String composite = compositeKey(hash, modelId);
+
+        System.out.println("DEBUG GET -> Looking for Key: [" + composite + "]");
+        System.out.println("DEBUG GET -> Keys currently in Map: " + map.keySet());
+
         lock.writeLock().lock();
         try {
             if (map.containsKey(composite)) {
+                System.out.println("DEBUG GET -> HIT FOUND!");
                 CacheNode<String, StoredValue> node = map.get(composite);
                 removeNode(node);
                 addNode(node);
                 return node.value;
             }
+            System.out.println("DEBUG GET -> MISS");
             return null;
         } finally {
             lock.writeLock().unlock();
