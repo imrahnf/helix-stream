@@ -75,6 +75,7 @@ services:
     # ONLY runs on Windows Compute Node
     profiles: ["windows"]
     environment:
+      - TITAN_CACHE_HOST=titancache
       - MODE=CPU # MODE=GPU_ROCM not yet supported
     #  deploy:
     #    resources:
