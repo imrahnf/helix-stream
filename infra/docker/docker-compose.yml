@@ -60,6 +60,7 @@ services:
     profiles: ["full"]
     environment:
       - TITAN_CACHE_HOST=helix_titancache
+      - MODEL_ID=esm2_t6_8M_UR50D
       - MODE=CPU
     depends_on:
       - titancache
@@ -76,6 +77,7 @@ services:
     profiles: ["windows"]
     environment:
       - TITAN_CACHE_HOST=titancache
+      - MODEL_ID=esm2_t33_650M_UR50D
       - MODE=CPU # MODE=GPU_ROCM not yet supported
     #  deploy:
     #    resources:

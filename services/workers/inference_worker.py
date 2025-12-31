@@ -20,16 +20,16 @@ class HelixWorker:
         host = os.getenv("TITAN_CACHE_HOST", "localhost")
         port = "9090"
         
-        # 8M model for Mac CPU
-        self.model_id = "esm2_t6_8M_UR50D"
+        # Dynamitcally pull model from env (but default to the 8M model)
+        self.model_id = os.getenv("MODEL_ID", "esm2_t6_8M_UR50D")
         self.local_model_name = "facebook/esm2_t6_8M_UR50D"
 
+        # gRPC init
         self.channel = grpc.insecure_channel(f"{host}:{port}")
         self.stub = cache_pb2_grpc.CacheServiceStub(self.channel)
         
         logging.info(f"Loading Model: {self.local_model_name}...")
         self.tokenizer = AutoTokenizer.from_pretrained(self.local_model_name)
-        # CHANGED: Use LM Head to get probabilities
         self.model = AutoModelForMaskedLM.from_pretrained(self.local_model_name)
         self.model.eval()
         logging.info("Worker Ready.")

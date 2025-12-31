@@ -19,9 +19,6 @@ class HelixOrchestrator:
             # Connect to TitanCache
             self.channel = grpc.insecure_channel(f"{host}:{port}")
             self.stub = cache_pb2_grpc.CacheServiceStub(self.channel)
-            
-            # TODO: Default model (change this to become dynamic later)
-            self.DEFAULT_MODEL = "esm2_t33_650M_UR50D"
 
     def _generate_hash(self, sequence: str) -> str:
         return hashlib.sha256(sequence.encode()).hexdigest()
