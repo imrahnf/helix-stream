@@ -26,4 +26,9 @@ async def analyze_sequence(
 
 @app.get("/health")
 def health_check():
-    return {"status": "online", "plane": "Control_Gateway"}
+    status = "HEALTHY" if orchestrator.is_remote_healthy else "DEGRADED (Local Only)"
+    return {
+        "status": status,
+        "remote_node": orchestrator.host,
+        "plane": "Control_Gateway"
+    }
