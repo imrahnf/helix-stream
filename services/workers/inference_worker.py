@@ -4,11 +4,16 @@ import time
 import grpc
 import logging
 import json
+from concurrent import futures
 import torch
 from transformers import AutoTokenizer, AutoModelForMaskedLM # CHANGED CLASS
 
 import cache_pb2
 import cache_pb2_grpc
+
+class HealthServicer(cache_pb2_grpc.HealthServicer):
+    def Check(self, request, context):
+        return cache_pb2.HealthCheckResponse(status=cache_pb2.HealthCheckResponse.SERVING)
 
 class HelixWorker:
     def __init__(self):
@@ -30,6 +35,12 @@ class HelixWorker:
         logging.info("Worker Ready.")
 
     def run(self):
+        # Start Health Server
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
+        cache_pb2_grpc.add_HealthServicer_to_server(HealthServicer(), server)
+        server.add_insecure_port('[::]:50051')
+        server.start()
+        logging.info("Health Check server started on port 50051")
         logging.info("Starting inference loop")
         while True:
             try:
