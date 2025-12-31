@@ -17,7 +17,7 @@ async def analyze_sequence(
         raise HTTPException(status_code=503, detail=result.get("message"))
 
     return {
-        "hash": result.get("hash"),
+        "hash": result.get("hash") or result.get("sequence_hash"),
         "status": result["status"].upper(),
         "source": result.get("source"),
         "model_version": result.get("model"),
