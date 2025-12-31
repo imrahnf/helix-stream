@@ -53,3 +53,22 @@ class EmbeddingRepository:
                 """
                 cur.execute(query, (seq_hash, model_id))
                 self.conn.commit()
+
+    def store_embedding(self, seq_hash: str, model_id: str, vector: str, confidence_score: float = 0.0):
+            with self.conn.cursor() as cur:
+                query = """
+                    INSERT INTO embeddings (sequence_hash, model_id, vector, confidence_score)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                """
+                cur.execute(query, (seq_hash, model_id, vector, confidence_score))
+                self.conn.commit()
+
+    def update_job_status(self, seq_hash: str, model_id: str, status: str):
+        with self.conn.cursor() as cur:
+            query = """
+                UPDATE inference_jobs SET status = %s
+                WHERE sequence_hash = %s AND model_id = %s
+            """
+            cur.execute(query, (status, seq_hash, model_id))
+            self.conn.commit()

@@ -54,18 +54,23 @@ services:
   # CPU Mode (MacBook)
   worker-cpu:
     build: 
-      context: ../../services/workers
+      context: ../../
+      dockerfile: services/workers/Dockerfile
     container_name: helix_worker_cpu
     profiles: ["full"]
     environment:
+      - TITAN_CACHE_HOST=helix_titancache
       - MODE=CPU
+    depends_on:
+      - titancache
     networks:
       - helix-net
 
   # GPU Mode (Windows/ROCm)
   worker-gpu:
     build: 
-      context: ../../services/workers
+      context: ../../
+      dockerfile: services/workers/Dockerfile
     container_name: helix_worker_gpu
     # ONLY runs on Windows Compute Node
     profiles: ["windows"]

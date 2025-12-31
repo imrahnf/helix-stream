@@ -14,62 +14,51 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class TitanCache {
     private static final Logger logger = LoggerFactory.getLogger(TitanCache.class);
 
-    // K is now the Composite Key (hash:model_id)
     private final int capacity;
     private final int maxEntrySizeBytes;
-    private final Map<String, CacheNode<String, String>> map;
-    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-    private final CacheNode<String, String> head;
-    private final CacheNode<String, String> tail;
 
-    // Queue is model specific
-    private final BlockingQueue<String> taskQueue = new LinkedBlockingQueue<>();
+    private final Map<String, CacheNode<String, StoredValue>> map;
+
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    private final CacheNode<String, StoredValue> head;
+    private final CacheNode<String, StoredValue> tail;
+
+    private final BlockingQueue<TaskEntry> taskQueue = new LinkedBlockingQueue<>();
     private final Map<String, Long> activeLeases = new ConcurrentHashMap<>();
+
+    public record StoredValue(String json, float confidence) {}
+    public record TaskEntry(String hash, String sequence, String modelId) {}
 
     public TitanCache(int capacity, int maxEntrySizeBytes) {
         this.capacity = capacity;
         this.maxEntrySizeBytes = maxEntrySizeBytes;
         this.map = new HashMap<>();
+        // Sentinels
         this.head = new CacheNode<>(null, null);
         this.tail = new CacheNode<>(null, null);
         head.next = tail;
         tail.prev = head;
     }
 
-    // Helperfor consistency
     private String compositeKey(String hash, String modelId) {
         return hash + ":" + modelId;
     }
 
-    public void submitTask(String hash, String modelId) {
+    public void submitTask(String hash, String sequence, String modelId) {
         String composite = compositeKey(hash, modelId);
-
-        // Check L1 Cache
-        if (map.containsKey(composite)) {
-            logger.debug("Skipping Task: {} already exists for model {}", hash, modelId);
-            return;
-        }
-
-        // Check Active
-        if (activeLeases.containsKey(composite)) {
-            logger.debug("Skipping Task: {} is currently leased", composite);
-            return;
-        }
-
-        // Queue
-        if (!taskQueue.contains(composite)) {
-            taskQueue.offer(composite);
-            logger.info("Task Queued: {}", composite);
+        if (map.containsKey(composite) || activeLeases.containsKey(composite)) return;
+        TaskEntry entry = new TaskEntry(hash, sequence, modelId);
+        if (!taskQueue.contains(entry)) {
+            taskQueue.offer(entry);
+            logger.info("Task Queued: {}", hash);
         }
     }
 
-    // Ffilter by model_id if needed or just lease raw comp keys
-    public List<String> leaseTasks(int count, String targetModelId) {
-        List<String> batch = new ArrayList<>();
+    public List<TaskEntry> leaseTasks(int count, String targetModelId) {
+        List<TaskEntry> batch = new ArrayList<>();
         taskQueue.drainTo(batch, count);
-
-        for (String composite : batch) {
-            activeLeases.put(composite, System.currentTimeMillis());
+        for (TaskEntry entry : batch) {
+            activeLeases.put(compositeKey(entry.hash(), entry.modelId()), System.currentTimeMillis());
         }
         return batch;
     }
@@ -81,40 +70,39 @@ public class TitanCache {
         }
     }
 
-    public void put(String hash, String modelId, String value) {
+    public void put(String hash, String modelId, String valueJson, float confidence) {
         String composite = compositeKey(hash, modelId);
+        StoredValue storedVal = new StoredValue(valueJson, confidence);
+
         lock.writeLock().lock();
         try {
             if (map.containsKey(composite)) {
-                // Update existing
-                CacheNode<String, String> node = map.get(composite);
-                node.value = value;
+                CacheNode<String, StoredValue> node = map.get(composite);
+                node.value = storedVal;
                 removeNode(node);
                 addNode(node);
                 return;
             }
-
             if (map.size() == capacity) {
-                CacheNode<String, String> lru = tail.prev;
+                CacheNode<String, StoredValue> lru = tail.prev;
                 removeNode(lru);
                 map.remove(lru.key);
             }
-
-            CacheNode<String, String> node = new CacheNode<>(composite, value);
+            CacheNode<String, StoredValue> node = new CacheNode<>(composite, storedVal);
             addNode(node);
             map.put(composite, node);
-            logger.info("Stored L1: {} (Model: {})", hash, modelId);
+            logger.info("Stored L1: {} (Conf: {})", hash, confidence);
         } finally {
             lock.writeLock().unlock();
         }
     }
 
-    public String get(String hash, String modelId) {
+    public StoredValue get(String hash, String modelId) {
         String composite = compositeKey(hash, modelId);
         lock.writeLock().lock();
         try {
             if (map.containsKey(composite)) {
-                CacheNode<String, String> node = map.get(composite);
+                CacheNode<String, StoredValue> node = map.get(composite);
                 removeNode(node);
                 addNode(node);
                 return node.value;
@@ -138,15 +126,15 @@ public class TitanCache {
         }
     }
 
-    private void addNode(CacheNode<String, String> node) {
-        CacheNode<String, String> oldNext = head.next;
+    private void addNode(CacheNode<String, StoredValue> node) {
+        CacheNode<String, StoredValue> oldNext = head.next;
         node.prev = head;
         node.next = oldNext;
         head.next = node;
         oldNext.prev = node;
     }
 
-    private CacheNode<String, String> removeNode(CacheNode<String, String> node) {
+    private CacheNode<String, StoredValue> removeNode(CacheNode<String, StoredValue> node) {
         node.prev.next = node.next;
         node.next.prev = node.prev;
         return node;

@@ -26,9 +26,8 @@ class HelixOrchestrator:
     def _generate_hash(self, sequence: str) -> str:
         return hashlib.sha256(sequence.encode()).hexdigest()
 
-    async def analyze_sequence(self, sequence: str):
+    async def analyze_sequence(self, sequence: str, model_id: str):
         seq_hash = self._generate_hash(sequence)
-        model_id = self.DEFAULT_MODEL
         
         # Fetch from L1 cache (TitanCache)
         try:
@@ -36,11 +35,21 @@ class HelixOrchestrator:
             response = self.stub.Get(request)
             
             if response.found:
+                with DatabaseContext(self.db_url) as repo:
+                    if not repo.get_embedding(seq_hash, model_id):
+                        repo.store_embedding(
+                            seq_hash, 
+                            model_id,
+                            response.value,
+                            response.confidence_score
+                        )
+                    repo.update_job_status(seq_hash, model_id, 'COMPLETED')
                 return {
                     "status" : "COMPLETED",
                     "source" : "L1_CACHE",
                     "model" : response.model_id,
-                    "data" : response.value
+                    "data" : response.value,
+                    "confidence": response.confidence_score
                 }
         except grpc.RpcError as e:
             print(f"L1 Cache Unavailables: {e}")
@@ -50,7 +59,19 @@ class HelixOrchestrator:
             # Check for existing data
             record = repo.get_embedding(seq_hash, model_id)
             if record:
-                # TODO: Populate L1 from L2
+                # Populate L1 from L2
+                try:
+                    entry = cache_pb2.BatchResult.Entry(
+                        key=seq_hash,
+                        embedding_json=record['vector']
+                    )
+                    result_payload = cache_pb2.BatchResult(
+                        results=[entry],
+                        model_id=model_id
+                    )
+                    self.stub.SubmitBatch(result_payload)
+                except grpc.RpcError as e:
+                    logging.log(f"Failed to cache L1: {e}")
                 return {
                     "status": "COMPLETED", 
                     "source": "L2_STORE", 
@@ -69,9 +90,13 @@ class HelixOrchestrator:
             
             # Trigger New Work
             repo.create_job(seq_hash, model_id)
-            # Tell TitanCache to queue this for workers
+            
             try:
-                self.stub.SubmitTask(cache_pb2.KeyRequest(key=seq_hash, model_id=model_id))
+                self.stub.SubmitTask(cache_pb2.Task(
+                    hash=seq_hash, 
+                    sequence=sequence, 
+                    model_id=model_id
+                ))
             except grpc.RpcError:
                 logging.error("Failed to submit task to TitanCache")
 

@@ -1,57 +1,63 @@
+// proto/cache.proto
 syntax = "proto3";
 
 option java_multiple_files = true;
 package com.titancache.grpc;
 
 service CacheService {
-  // Cache Operations
   rpc Put (CacheEntry) returns (EmptyResponse);
   rpc Get (KeyRequest) returns (ValueResponse);
   rpc Clear (EmptyRequest) returns (EmptyResponse);
 
-  // Worker Operations
-  rpc SubmitTask (KeyRequest) returns (EmptyResponse);
+  rpc SubmitTask (Task) returns (EmptyResponse);
   rpc LeaseTasks (LeaseRequest) returns (LeaseResponse);
   rpc SubmitBatch (BatchResult) returns (EmptyResponse);
 }
 
 message KeyRequest {
-  string key = 1;       // SHA-256
-  string model_id = 2;  // eg "esm2_t33_650M_UR50D"
+  string key = 1;
+  string model_id = 2;
 }
 
 message ValueResponse {
-  string value = 1;         // JSON Embedding
+  string value = 1;
   bool found = 2;
   string model_id = 3;
-  string created_at = 4;    // ISO timestamp
+  string created_at = 4;
+  float confidence_score = 5;
 }
 
 message CacheEntry {
   string key = 1;
   string value = 2;
   string model_id = 3;
+  float confidence_score = 4; // Allow manual put
 }
 
 message LeaseRequest {
   int32 max_batch_size = 1;
-  string target_model_id = 2; // Workers only lease tasks they can handle
+  string target_model_id = 2;
 }
 
 message LeaseResponse {
-  repeated string keys = 1;
+  repeated Task tasks = 1;
 }
 
 message BatchResult {
   message Entry {
     string key = 1;
     string embedding_json = 2;
+    float confidence_score = 3;
   }
   repeated Entry results = 1;
-  string model_id = 2;      // Model that processed the batch
+  string model_id = 2;
 }
 
 message EmptyRequest {}
-message EmptyResponse {
-  string message = 1;
+message EmptyResponse { string message = 1; }
+
+message Task {
+  string hash = 1;
+  string sequence = 2;
+  string model_id = 3;
 }

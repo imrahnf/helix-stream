@@ -51,7 +51,7 @@ class CacheServiceStub(object):
                 _registered_method=True)
         self.SubmitTask = channel.unary_unary(
                 '/com.titancache.grpc.CacheService/SubmitTask',
-                request_serializer=cache__pb2.KeyRequest.SerializeToString,
+                request_serializer=cache__pb2.Task.SerializeToString,
                 response_deserializer=cache__pb2.EmptyResponse.FromString,
                 _registered_method=True)
         self.LeaseTasks = channel.unary_unary(
@@ -70,8 +70,7 @@ class CacheServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Put(self, request, context):
-        """Cache Operations
-        """
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -89,8 +88,7 @@ class CacheServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def SubmitTask(self, request, context):
-        """Worker Operations
-        """
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -127,7 +125,7 @@ def add_CacheServiceServicer_to_server(servicer, server):
             ),
             'SubmitTask': grpc.unary_unary_rpc_method_handler(
                     servicer.SubmitTask,
-                    request_deserializer=cache__pb2.KeyRequest.FromString,
+                    request_deserializer=cache__pb2.Task.FromString,
                     response_serializer=cache__pb2.EmptyResponse.SerializeToString,
             ),
             'LeaseTasks': grpc.unary_unary_rpc_method_handler(
@@ -247,7 +245,7 @@ class CacheService(object):
             request,
             target,
             '/com.titancache.grpc.CacheService/SubmitTask',
-            cache__pb2.KeyRequest.SerializeToString,
+            cache__pb2.Task.SerializeToString,
             cache__pb2.EmptyResponse.FromString,
             options,
             channel_credentials,

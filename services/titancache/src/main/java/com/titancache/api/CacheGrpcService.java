@@ -17,29 +17,38 @@ public class CacheGrpcService extends CacheServiceGrpc.CacheServiceImplBase {
     }
 
     @Override
-    public void submitTask(KeyRequest request, StreamObserver<EmptyResponse> responseObserver) {
-        // Enforce Model ID presence
-        if (request.getModelId().isEmpty()) {
-            logger.warn("Rejected SubmitTask: missing model_id");
-            responseObserver.onError(new IllegalArgumentException("model_id is required"));
-            return;
-        }
-
-        cache.submitTask(request.getKey(), request.getModelId());
+    public void submitTask(Task request, StreamObserver<EmptyResponse> responseObserver) {
+        cache.submitTask(request.getHash(), request.getSequence(), request.getModelId());
         responseObserver.onNext(EmptyResponse.newBuilder().setMessage("Queued").build());
         responseObserver.onCompleted();
     }
 
     @Override
+    public void leaseTasks(LeaseRequest request, StreamObserver<LeaseResponse> responseObserver) {
+        var entries = cache.leaseTasks(request.getMaxBatchSize(), request.getTargetModelId());
+        LeaseResponse.Builder responseBuilder = LeaseResponse.newBuilder();
+        for (var entry : entries) {
+            responseBuilder.addTasks(Task.newBuilder()
+                    .setHash(entry.hash())
+                    .setSequence(entry.sequence())
+                    .setModelId(entry.modelId())
+                    .build());
+        }
+        responseObserver.onNext(responseBuilder.build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
     public void get(KeyRequest request, StreamObserver<ValueResponse> responseObserver) {
-        String val = cache.get(request.getKey(), request.getModelId());
+        var storedVal = cache.get(request.getKey(), request.getModelId());
 
         ValueResponse.Builder builder = ValueResponse.newBuilder()
-                .setFound(val != null)
+                .setFound(storedVal != null)
                 .setModelId(request.getModelId());
 
-        if (val != null) {
-            builder.setValue(val);
+        if (storedVal != null) {
+            builder.setValue(storedVal.json());
+            builder.setConfidenceScore(storedVal.confidence());
         }
 
         responseObserver.onNext(builder.build());
@@ -48,17 +57,8 @@ public class CacheGrpcService extends CacheServiceGrpc.CacheServiceImplBase {
 
     @Override
     public void put(CacheEntry request, StreamObserver<EmptyResponse> responseObserver) {
-        cache.put(request.getKey(), request.getModelId(), request.getValue());
+        cache.put(request.getKey(), request.getModelId(), request.getValue(), request.getConfidenceScore());
         responseObserver.onNext(EmptyResponse.newBuilder().setMessage("Stored").build());
-        responseObserver.onCompleted();
-    }
-
-    @Override
-    public void leaseTasks(LeaseRequest request, StreamObserver<LeaseResponse> responseObserver) {
-        var keys = cache.leaseTasks(request.getMaxBatchSize(), request.getTargetModelId());
-
-        // Wwe return the composites "hash:model_id"
-        responseObserver.onNext(LeaseResponse.newBuilder().addAllKeys(keys).build());
         responseObserver.onCompleted();
     }
 
@@ -66,8 +66,7 @@ public class CacheGrpcService extends CacheServiceGrpc.CacheServiceImplBase {
     public void submitBatch(BatchResult request, StreamObserver<EmptyResponse> responseObserver) {
         String modelId = request.getModelId();
         for (var entry : request.getResultsList()) {
-            // The key here is gonna be likely the RAW hash from the worker
-            cache.put(entry.getKey(), modelId, entry.getEmbeddingJson());
+            cache.put(entry.getKey(), modelId, entry.getEmbeddingJson(), entry.getConfidenceScore());
             cache.resolveTask(entry.getKey(), modelId);
         }
         responseObserver.onNext(EmptyResponse.newBuilder().setMessage("Batch Processed").build());
