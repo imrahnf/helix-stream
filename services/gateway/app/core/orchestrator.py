@@ -45,6 +45,7 @@ class HelixOrchestrator:
                         )
                     repo.update_job_status(seq_hash, model_id, 'COMPLETED')
                 return {
+                    "hash" : seq_hash,
                     "status" : "COMPLETED",
                     "source" : "L1_CACHE",
                     "model" : response.model_id,
@@ -73,6 +74,7 @@ class HelixOrchestrator:
                 except grpc.RpcError as e:
                     logging.log(f"Failed to cache L1: {e}")
                 return {
+                    "hash" : seq_hash,
                     "status": "COMPLETED", 
                     "source": "L2_STORE", 
                     "model": model_id,
@@ -83,6 +85,7 @@ class HelixOrchestrator:
             status = repo.get_job_status(seq_hash, model_id)
             if status:
                 return {
+                    "hash" : seq_hash,
                     "status": status, 
                     "source": "JOB_QUEUE", 
                     "model": model_id
@@ -101,6 +104,7 @@ class HelixOrchestrator:
                 logging.error("Failed to submit task to TitanCache")
 
             return {
+                "hash" : seq_hash,
                 "status": "PENDING", 
                 "source": "NEW_JOB", 
                 "model": model_id
