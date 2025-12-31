@@ -20,9 +20,9 @@ class HelixWorker:
         host = os.getenv("TITAN_CACHE_HOST", "localhost")
         port = "9090"
         
-        # Dynamitcally pull model from env (but default to the 8M model)
+        # Dynamitcally pull model from env (but default to the 8M model if n found)
         self.model_id = os.getenv("MODEL_ID", "esm2_t6_8M_UR50D")
-        self.local_model_name = "facebook/esm2_t6_8M_UR50D"
+        self.local_model_name = f"facebook/{self.model_id}"
 
         # gRPC init
         self.channel = grpc.insecure_channel(f"{host}:{port}")
