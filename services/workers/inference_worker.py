@@ -6,7 +6,7 @@ import logging
 import json
 from concurrent import futures
 import torch
-from transformers import AutoTokenizer, AutoModelForMaskedLM # CHANGED CLASS
+from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 import cache_pb2
 import cache_pb2_grpc

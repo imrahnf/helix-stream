@@ -1,12 +1,9 @@
-# services/gateway/app/core/orchestrator.py
 import os
 import sys
 import grpc
 import logging
 import hashlib
 import asyncio
-import threading
-import time
 import torch
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 import json
@@ -52,7 +49,6 @@ class HelixOrchestrator:
                 was_unhealthy = not self.is_remote_healthy
                 self.is_remote_healthy = (response.status == 1)
                 
-                # NEW: Explicit recovery log
                 if was_unhealthy and self.is_remote_healthy:
                     logging.info(">>> Windows Compute Node RECOVERED. Resuming high-accuracy inference.")
                     
@@ -64,7 +60,6 @@ class HelixOrchestrator:
             await asyncio.sleep(5)
 
     def _load_local_model(self):
-        # Lazy load the model
         if self.local_model is None:
             logging.info(f"Loading Fallback Model: {self.local_model_name}")
             self.local_tokenizer = AutoTokenizer.from_pretrained(self.local_model_name)
@@ -77,18 +72,23 @@ class HelixOrchestrator:
         inputs = self.local_tokenizer(sequence, return_tensors="pt")
         with torch.no_grad():
             outputs = self.local_model(**inputs, output_hidden_states=True)
-            # Generate the embedding
             embedding = outputs.hidden_states[-1].mean(dim=1).tolist()[0]
             
-            # Confidence calculation
             logits = outputs.logits
             probs = torch.softmax(logits, dim=-1)
             token_ids = inputs["input_ids"]
             token_probs = torch.gather(probs, dim=-1, index=token_ids.unsqueeze(-1)).squeeze(-1)
             confidence = token_probs.mean().item()
 
+        # Update DB
         with DatabaseContext(self.db_url) as repo:
-            repo.store_embedding(seq_hash, model_id, json.dumps(embedding), confidence)
+            repo.store_embedding(
+                seq_hash, 
+                model_id, 
+                embedding, 
+                confidence, 
+                is_fallback=True 
+            )
             repo.update_job_status(seq_hash, model_id, 'COMPLETED')
 
         return {
@@ -96,7 +96,7 @@ class HelixOrchestrator:
             "status": "COMPLETED",
             "source": "LOCAL_FALLBACK",
             "model": self.local_model_name,
-            "data": json.dumps(embedding),
+            "data": embedding, 
             "confidence": confidence
         }
 
@@ -106,20 +106,28 @@ class HelixOrchestrator:
     async def analyze_sequence(self, sequence: str, model_id: str):
         seq_hash = self._generate_hash(sequence)
         
-        # Check whether or not to try the remote node
+        # Circuit Breaker
         if not self.is_remote_healthy:
-            return await self._process_locally(sequence, seq_hash, model_id)
+            fallback_model = "esm2_t6_8M_UR50D"
+            return await self._process_locally(sequence, seq_hash, fallback_model)
 
-        # Check L1 TitanCache first
+        # Check L1 TitanCache
         try:
             request = cache_pb2.KeyRequest(key=seq_hash, model_id=model_id)
             response = self.stub.Get(request)
             
             if response.found:
-                # Update Postgres
+                vector_data = json.loads(response.value)
+                
                 with DatabaseContext(self.db_url) as repo:
                     if not repo.get_embedding(seq_hash, model_id):
-                        repo.store_embedding(seq_hash, model_id, response.value, response.confidence_score)
+                        repo.store_embedding(
+                            seq_hash, 
+                            model_id, 
+                            vector_data, 
+                            response.confidence_score,
+                            is_fallback=False
+                        )
                     repo.update_job_status(seq_hash, model_id, 'COMPLETED')
                 
                 return {
@@ -127,7 +135,7 @@ class HelixOrchestrator:
                     "status": "COMPLETED",
                     "source": "L1_CACHE",
                     "model": response.model_id,
-                    "data": response.value,
+                    "data": vector_data,
                     "confidence": response.confidence_score
                 }
         except grpc.RpcError as e:
@@ -142,10 +150,9 @@ class HelixOrchestrator:
                     "status": "COMPLETED", 
                     "source": "L2_STORE", 
                     "model": model_id,
-                    "data": record['vector']
+                    "data": record['raw_json'] 
                 }
             
-            # Check job status
             status = repo.get_job_status(seq_hash, model_id)
             if status:
                 return {
@@ -155,8 +162,9 @@ class HelixOrchestrator:
                     "model": model_id
                 }
             
-            # Trigger new wrk
-            repo.create_job(seq_hash, model_id)
+            # Create New Job
+            repo.create_job(seq_hash, model_id, compute_node="WINDOWS_GPU")
+            
             try:
                 self.stub.SubmitTask(cache_pb2.Task(hash=seq_hash, sequence=sequence, model_id=model_id))
             except grpc.RpcError:
