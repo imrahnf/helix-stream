@@ -310,3 +310,118 @@ class CacheService(object):
             timeout,
             metadata,
             _registered_method=True)
+
+
+class HealthStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.Check = channel.unary_unary(
+                '/com.titancache.grpc.Health/Check',
+                request_serializer=cache__pb2.HealthCheckRequest.SerializeToString,
+                response_deserializer=cache__pb2.HealthCheckResponse.FromString,
+                _registered_method=True)
+        self.Watch = channel.unary_stream(
+                '/com.titancache.grpc.Health/Watch',
+                request_serializer=cache__pb2.HealthCheckRequest.SerializeToString,
+                response_deserializer=cache__pb2.HealthCheckResponse.FromString,
+                _registered_method=True)
+
+
+class HealthServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def Check(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Watch(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_HealthServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'Check': grpc.unary_unary_rpc_method_handler(
+                    servicer.Check,
+                    request_deserializer=cache__pb2.HealthCheckRequest.FromString,
+                    response_serializer=cache__pb2.HealthCheckResponse.SerializeToString,
+            ),
+            'Watch': grpc.unary_stream_rpc_method_handler(
+                    servicer.Watch,
+                    request_deserializer=cache__pb2.HealthCheckRequest.FromString,
+                    response_serializer=cache__pb2.HealthCheckResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'com.titancache.grpc.Health', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('com.titancache.grpc.Health', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class Health(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def Check(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/com.titancache.grpc.Health/Check',
+            cache__pb2.HealthCheckRequest.SerializeToString,
+            cache__pb2.HealthCheckResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Watch(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/com.titancache.grpc.Health/Watch',
+            cache__pb2.HealthCheckRequest.SerializeToString,
+            cache__pb2.HealthCheckResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

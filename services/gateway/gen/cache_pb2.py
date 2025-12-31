@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x63\x61\x63he.proto\x12\x13\x63om.titancache.grpc\"+\n\nKeyRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x10\n\x08model_id\x18\x02 \x01(\t\"m\n\rValueResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x12\n\ncreated_at\x18\x04 \x01(\t\x12\x18\n\x10\x63onfidence_score\x18\x05 \x01(\x02\"T\n\nCacheEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x18\n\x10\x63onfidence_score\x18\x04 \x01(\x02\"?\n\x0cLeaseRequest\x12\x16\n\x0emax_batch_size\x18\x01 \x01(\x05\x12\x17\n\x0ftarget_model_id\x18\x02 \x01(\t\"9\n\rLeaseResponse\x12(\n\x05tasks\x18\x01 \x03(\x0b\x32\x19.com.titancache.grpc.Task\"\xa0\x01\n\x0b\x42\x61tchResult\x12\x37\n\x07results\x18\x01 \x03(\x0b\x32&.com.titancache.grpc.BatchResult.Entry\x12\x10\n\x08model_id\x18\x02 \x01(\t\x1a\x46\n\x05\x45ntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x16\n\x0e\x65mbedding_json\x18\x02 \x01(\t\x12\x18\n\x10\x63onfidence_score\x18\x03 \x01(\x02\"\x0e\n\x0c\x45mptyRequest\" \n\rEmptyResponse\x12\x0f\n\x07message\x18\x01 \x01(\t\"8\n\x04Task\x12\x0c\n\x04hash\x18\x01 \x01(\t\x12\x10\n\x08sequence\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t2\xed\x03\n\x0c\x43\x61\x63heService\x12J\n\x03Put\x12\x1f.com.titancache.grpc.CacheEntry\x1a\".com.titancache.grpc.EmptyResponse\x12J\n\x03Get\x12\x1f.com.titancache.grpc.KeyRequest\x1a\".com.titancache.grpc.ValueResponse\x12N\n\x05\x43lear\x12!.com.titancache.grpc.EmptyRequest\x1a\".com.titancache.grpc.EmptyResponse\x12K\n\nSubmitTask\x12\x19.com.titancache.grpc.Task\x1a\".com.titancache.grpc.EmptyResponse\x12S\n\nLeaseTasks\x12!.com.titancache.grpc.LeaseRequest\x1a\".com.titancache.grpc.LeaseResponse\x12S\n\x0bSubmitBatch\x12 .com.titancache.grpc.BatchResult\x1a\".com.titancache.grpc.EmptyResponseB\x02P\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x63\x61\x63he.proto\x12\x13\x63om.titancache.grpc\"%\n\x12HealthCheckRequest\x12\x0f\n\x07service\x18\x01 \x01(\t\"\x99\x01\n\x13HealthCheckResponse\x12\x46\n\x06status\x18\x01 \x01(\x0e\x32\x36.com.titancache.grpc.HealthCheckResponse.ServingStatus\":\n\rServingStatus\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x0b\n\x07SERVING\x10\x01\x12\x0f\n\x0bNOT_SERVING\x10\x02\"+\n\nKeyRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x10\n\x08model_id\x18\x02 \x01(\t\"m\n\rValueResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x12\n\ncreated_at\x18\x04 \x01(\t\x12\x18\n\x10\x63onfidence_score\x18\x05 \x01(\x02\"T\n\nCacheEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x18\n\x10\x63onfidence_score\x18\x04 \x01(\x02\"?\n\x0cLeaseRequest\x12\x16\n\x0emax_batch_size\x18\x01 \x01(\x05\x12\x17\n\x0ftarget_model_id\x18\x02 \x01(\t\"9\n\rLeaseResponse\x12(\n\x05tasks\x18\x01 \x03(\x0b\x32\x19.com.titancache.grpc.Task\"\xa0\x01\n\x0b\x42\x61tchResult\x12\x37\n\x07results\x18\x01 \x03(\x0b\x32&.com.titancache.grpc.BatchResult.Entry\x12\x10\n\x08model_id\x18\x02 \x01(\t\x1a\x46\n\x05\x45ntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x16\n\x0e\x65mbedding_json\x18\x02 \x01(\t\x12\x18\n\x10\x63onfidence_score\x18\x03 \x01(\x02\"\x0e\n\x0c\x45mptyRequest\" \n\rEmptyResponse\x12\x0f\n\x07message\x18\x01 \x01(\t\"8\n\x04Task\x12\x0c\n\x04hash\x18\x01 \x01(\t\x12\x10\n\x08sequence\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t2\xed\x03\n\x0c\x43\x61\x63heService\x12J\n\x03Put\x12\x1f.com.titancache.grpc.CacheEntry\x1a\".com.titancache.grpc.EmptyResponse\x12J\n\x03Get\x12\x1f.com.titancache.grpc.KeyRequest\x1a\".com.titancache.grpc.ValueResponse\x12N\n\x05\x43lear\x12!.com.titancache.grpc.EmptyRequest\x1a\".com.titancache.grpc.EmptyResponse\x12K\n\nSubmitTask\x12\x19.com.titancache.grpc.Task\x1a\".com.titancache.grpc.EmptyResponse\x12S\n\nLeaseTasks\x12!.com.titancache.grpc.LeaseRequest\x1a\".com.titancache.grpc.LeaseResponse\x12S\n\x0bSubmitBatch\x12 .com.titancache.grpc.BatchResult\x1a\".com.titancache.grpc.EmptyResponse2\xc2\x01\n\x06Health\x12Z\n\x05\x43heck\x12\'.com.titancache.grpc.HealthCheckRequest\x1a(.com.titancache.grpc.HealthCheckResponse\x12\\\n\x05Watch\x12\'.com.titancache.grpc.HealthCheckRequest\x1a(.com.titancache.grpc.HealthCheckResponse0\x01\x42\x02P\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,26 +32,34 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'cache_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'P\001'
-  _globals['_KEYREQUEST']._serialized_start=36
-  _globals['_KEYREQUEST']._serialized_end=79
-  _globals['_VALUERESPONSE']._serialized_start=81
-  _globals['_VALUERESPONSE']._serialized_end=190
-  _globals['_CACHEENTRY']._serialized_start=192
-  _globals['_CACHEENTRY']._serialized_end=276
-  _globals['_LEASEREQUEST']._serialized_start=278
-  _globals['_LEASEREQUEST']._serialized_end=341
-  _globals['_LEASERESPONSE']._serialized_start=343
-  _globals['_LEASERESPONSE']._serialized_end=400
-  _globals['_BATCHRESULT']._serialized_start=403
-  _globals['_BATCHRESULT']._serialized_end=563
-  _globals['_BATCHRESULT_ENTRY']._serialized_start=493
-  _globals['_BATCHRESULT_ENTRY']._serialized_end=563
-  _globals['_EMPTYREQUEST']._serialized_start=565
-  _globals['_EMPTYREQUEST']._serialized_end=579
-  _globals['_EMPTYRESPONSE']._serialized_start=581
-  _globals['_EMPTYRESPONSE']._serialized_end=613
-  _globals['_TASK']._serialized_start=615
-  _globals['_TASK']._serialized_end=671
-  _globals['_CACHESERVICE']._serialized_start=674
-  _globals['_CACHESERVICE']._serialized_end=1167
+  _globals['_HEALTHCHECKREQUEST']._serialized_start=36
+  _globals['_HEALTHCHECKREQUEST']._serialized_end=73
+  _globals['_HEALTHCHECKRESPONSE']._serialized_start=76
+  _globals['_HEALTHCHECKRESPONSE']._serialized_end=229
+  _globals['_HEALTHCHECKRESPONSE_SERVINGSTATUS']._serialized_start=171
+  _globals['_HEALTHCHECKRESPONSE_SERVINGSTATUS']._serialized_end=229
+  _globals['_KEYREQUEST']._serialized_start=231
+  _globals['_KEYREQUEST']._serialized_end=274
+  _globals['_VALUERESPONSE']._serialized_start=276
+  _globals['_VALUERESPONSE']._serialized_end=385
+  _globals['_CACHEENTRY']._serialized_start=387
+  _globals['_CACHEENTRY']._serialized_end=471
+  _globals['_LEASEREQUEST']._serialized_start=473
+  _globals['_LEASEREQUEST']._serialized_end=536
+  _globals['_LEASERESPONSE']._serialized_start=538
+  _globals['_LEASERESPONSE']._serialized_end=595
+  _globals['_BATCHRESULT']._serialized_start=598
+  _globals['_BATCHRESULT']._serialized_end=758
+  _globals['_BATCHRESULT_ENTRY']._serialized_start=688
+  _globals['_BATCHRESULT_ENTRY']._serialized_end=758
+  _globals['_EMPTYREQUEST']._serialized_start=760
+  _globals['_EMPTYREQUEST']._serialized_end=774
+  _globals['_EMPTYRESPONSE']._serialized_start=776
+  _globals['_EMPTYRESPONSE']._serialized_end=808
+  _globals['_TASK']._serialized_start=810
+  _globals['_TASK']._serialized_end=866
+  _globals['_CACHESERVICE']._serialized_start=869
+  _globals['_CACHESERVICE']._serialized_end=1362
+  _globals['_HEALTH']._serialized_start=1365
+  _globals['_HEALTH']._serialized_end=1559
 # @@protoc_insertion_point(module_scope)
