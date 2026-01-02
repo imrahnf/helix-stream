@@ -43,12 +43,40 @@ class EmbeddingRepository:
             cur.execute(query_vec, (meta_id, vector_list))
             self.conn.commit()
 
+    def find_similar(self, vector, model_id, limit=5):
+        # Vector similarity search- pgvector cosine distance
+        table = 'vectors_esm2_650m' if '650M' in model_id else 'vectors_esm2_8m'
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            query = f"""
+                SELECT m.sequence_hash, m.sequence_text, m.external_metadata,
+                       (v.vector <=> %s::vector) as distance
+                FROM {table} v
+                JOIN embedding_metadata m ON v.metadata_id = m.id
+                WHERE m.model_id = %s
+                ORDER BY distance ASC
+                LIMIT %s
+            """
+            cur.execute(query, (vector, model_id, limit))
+            return cur.fetchall()
+
     def get_embedding(self, seq_hash: str, model_id: str):
         table = 'vectors_esm2_8m' if model_id == 'esm2_t6_8M_UR50D' else 'vectors_esm2_650m'
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
             query = f"SELECT m.*, v.vector FROM embedding_metadata m JOIN {table} v ON m.id = v.metadata_id WHERE m.sequence_hash = %s AND m.model_id = %s"
             cur.execute(query, (seq_hash, model_id))
             return cur.fetchone()
+
+    def get_job_status(self, seq_hash: str, model_id: str):
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT status FROM inference_jobs WHERE sequence_hash = %s AND model_id = %s", (seq_hash, model_id))
+            result = cur.fetchone()
+            return result[0] if result else None
+
+    def create_job(self, seq_hash: str, model_id: str, compute_node: str = "UNKNOWN"):
+        with self.conn.cursor() as cur:
+            query = "INSERT INTO inference_jobs (sequence_hash, model_id, status, compute_node) VALUES (%s, %s, 'PENDING', %s) ON CONFLICT DO NOTHING"
+            cur.execute(query, (seq_hash, model_id, compute_node))
+            self.conn.commit()
             
     def update_job_status(self, seq_hash, model_id, status):
         with self.conn.cursor() as cur:
