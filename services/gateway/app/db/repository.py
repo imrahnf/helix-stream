@@ -65,7 +65,7 @@ class EmbeddingRepository:
             cur.execute("SELECT * FROM embedding_metadata WHERE primary_accession = %s LIMIT 1", (accession,))
             row = cur.fetchone()
             if not row: return None
-            # Fix JSON loading
+            # Fix json loading
             for key in ['pdb_ids', 'binding_sites']:
                 if row.get(key) and isinstance(row[key], str):
                     row[key] = json.loads(row[key])

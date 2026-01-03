@@ -1,6 +1,6 @@
 # services/gateway/app/core/orchestrator.py
 import os, hashlib, torch, json, logging, requests, grpc, time, re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 from app.db.repository import DatabaseContext
 from app.core.structure import StructureOrchestrator
@@ -14,7 +14,7 @@ logger = logging.getLogger("HelixOrchestrator")
 
 class UniProtIngestor:
     BASE_URL = "https://rest.uniprot.org/uniprotkb/search"
-    FIELDS = ["accession", "protein_name", "organism_name", "sequence", "cc_function", "ft_binding", "ft_site", "xref_pdb", "lineage"]
+    FIELDS = ["accession", "protein_name", "organism_name", "sequence", "cc_function", "ft_binding", "ft_site", "xref_pdb"]
 
     def fetch_proteins(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         try:
@@ -95,10 +95,11 @@ class HelixOrchestrator:
                         for _ in range(10):
                             res = stub.Get(cache_pb2.KeyRequest(key=seq_hash, model_id=model_id), timeout=1.0)
                             if res.found: 
-                                return json.loads(res.value), model_id, 0.98
+                                # Returning None for confidence as it's not yet computed by model
+                                return json.loads(res.value), model_id, None
                             time.sleep(1)
             except Exception as e:
-                logger.warning(f"Remote Worker fail: {e}. Falling back.")
+                logger.warning(f"Remote Worker unavailable: {e}. Falling back.")
 
         # Local Fallback
         logger.info("Executing Local Fallback Inference...")
@@ -112,12 +113,11 @@ class HelixOrchestrator:
             outputs = self.local_model(**inputs, output_hidden_states=True)
             embeddings = outputs.hidden_states[-1].mean(dim=1)
             normalized = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-            return normalized.tolist()[0], "esm2_t6_8M_UR50D", 0.45
+            return normalized.tolist()[0], "esm2_t6_8M_UR50D", None
 
     async def ingest_manual_sequence(self, sequence: str, model_id: str):
         clean_seq = self._clean_sequence(sequence)
         seq_hash = hashlib.sha256(clean_seq.encode()).hexdigest()
-        
         vector, active_model, confidence = self._get_vector_data(clean_seq, model_id)
         
         data = {
@@ -125,7 +125,7 @@ class HelixOrchestrator:
             "name": "Manual Ingestion",
             "organism": "User Defined",
             "sequence": clean_seq,
-            "function": "Manually ingested sequence via Dashboard.",
+            "function": "Manually ingested sequence.",
             "annotations": [],
             "pdb_ids": []
         }
@@ -133,7 +133,7 @@ class HelixOrchestrator:
         with DatabaseContext(self.db_url) as repo:
             repo.store_rich_embedding(seq_hash, active_model, vector, data, confidence, is_fallback=(active_model != model_id))
         
-        return [{"accession": data['accession'], "name": "Manual Entry", "status": "COMPLETED_LOCAL" if active_model != model_id else "COMPLETED_REMOTE"}]
+        return [{"accession": data['accession'], "status": "COMPLETED"}]
 
     async def ingest_from_uniprot(self, query: str, model_id: str, limit: int = 5):
         raw_results = self.ingestor.fetch_proteins(query, limit)
