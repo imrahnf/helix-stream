@@ -61,16 +61,22 @@ class HelixOrchestrator:
     def __init__(self):
         self.db_url = os.getenv("DATABASE_URL")
         self.remote_host = os.getenv("TITAN_CACHE_HOST", "localhost")
-        self.remote_port = "9090"
-        self.worker_health_port = "50051"
+        self.remote_port = os.getenv("TITAN_CACHE_PORT", "9090")
+        self.worker_health_port = os.getenv("WORKER_PORT", "50051")
         self.local_model_name = "facebook/esm2_t6_8M_UR50D"
         self.local_model = None
         self.local_tokenizer = None
         self.ingestor = UniProtIngestor()
 
     def _clean_sequence(self, sequence: str) -> str:
+        # Remove FASTA headers and whitespace
         seq = re.sub(r'>.*?\n', '', sequence)
-        seq = re.sub(r'[^A-Z]', '', seq.upper())
+        seq = re.sub(r'\s+', '', seq).upper()
+
+        if re.search(r'[^ACDEFGHIKLMNPQRSTVWY]', seq):
+            raise ValueError("Sequence contains invalid amino acids. Only ACDEFGHIKLMNPQRSTVWY are allowed.")
+
+        if not seq: raise ValueError("Invalid protein sequence")
         return seq[:1022]
 
     def _is_worker_online(self) -> bool:
@@ -91,17 +97,21 @@ class HelixOrchestrator:
             try:
                 if self._is_worker_online():
                     target = f"{self.remote_host}:{self.remote_port}"
-                    with grpc.insecure_channel(target, options=[('grpc.enable_retries', 0)]) as channel:
+                    with grpc.insecure_channel(target, options=[('grpc.enable_retries', 1), ('grpc.keepalive_timeout_ms', 10000)]) as channel:
                         stub = cache_pb2_grpc.CacheServiceStub(channel)
-                        stub.SubmitTask(cache_pb2.Task(hash=seq_hash, sequence=clean_seq, model_id=model_id), timeout=1.0)
-                        
+                        try:
+                            stub.SubmitTask(cache_pb2.Task(hash=seq_hash, sequence=clean_seq, model_id=model_id), timeout=2.0)
+                        except grpc.RpcError as e:
+                            logger.error(f"SubmitTask failed: {e.code()} - {e.details()}")
+                            raise e
+
                         for _ in range(12): 
                             try:
-                                res = stub.Get(cache_pb2.KeyRequest(key=seq_hash, model_id=model_id), timeout=0.5)
+                                res = stub.Get(cache_pb2.KeyRequest(key=seq_hash, model_id=model_id), timeout=1.0)
                                 if res.found: 
-                                    return json.loads(res.value), model_id, None
+                                    return json.loads(res.value), model_id, res.confidence_score
                             except grpc.RpcError:
-                                break 
+                                pass # Retry loop
                             time.sleep(1)
             except Exception as e:
                 logger.warning(f"Remote Worker fail: {e}. Falling back to Local 8M.")

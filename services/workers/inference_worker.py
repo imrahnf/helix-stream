@@ -1,6 +1,6 @@
 # $env:MODEL_ID="esm2_t33_650M_UR50D"; $env:TITAN_CACHE_HOST="localhost"; python services/workers/inference_worker.py
 # services/workers/inference_worker.py
-import os, sys, logging, json, torch, time, grpc
+import os, sys, logging, json, torch, time, grpc, atexit
 from concurrent import futures
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
@@ -33,8 +33,21 @@ class HelixWorker:
         self.model.to(self.device)
 
         host = os.getenv("TITAN_CACHE_HOST", "localhost")
-        self.channel = grpc.insecure_channel(f"{host}:9090")
+        port = os.getenv("TITAN_CACHE_PORT", "9090")
+        self.channel = grpc.insecure_channel(f"{host}:{port}")
         self.stub = cache_pb2_grpc.CacheServiceStub(self.channel)
+        
+        atexit.register(self.cleanup)
+
+    def cleanup(self):
+        logging.info("Closing gRPC channel...")
+        self.channel.close()
+
+    def _calculate_confidence(self, logits, hidden_states):
+        probs = torch.softmax(logits, dim=-1)
+        entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=-1)
+        normalized_entropy = 1.0 - (entropy / torch.log(torch.tensor(20.0)))  # 20 tokens
+        return float(normalized_entropy.mean().item())
 
     def _poll_and_process(self):
         try:
@@ -52,11 +65,12 @@ class HelixWorker:
                     embeddings = outputs.hidden_states[-1].mean(dim=1)
                     normalized = torch.nn.functional.normalize(embeddings, p=2, dim=1)
                     vector = normalized.tolist()[0]
+                    confidence = self._calculate_confidence(outputs.logits, outputs.hidden_states)
                 
                 entry = cache_pb2.BatchResult.Entry(
                     key=task.hash, 
                     embedding_json=json.dumps(vector), 
-                    confidence_score=0.0 # N/A - not yet implemented
+                    confidence_score=confidence
                 )
                 self.stub.SubmitBatch(cache_pb2.BatchResult(results=[entry], model_id=self.model_id))
         except Exception as e:
@@ -65,7 +79,8 @@ class HelixWorker:
     def run(self):
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
         cache_pb2_grpc.add_HealthServicer_to_server(HealthServicer(), server)
-        server.add_insecure_port('0.0.0.0:50051') 
+        worker_port = os.getenv("WORKER_PORT", "50051")
+        server.add_insecure_port(f'0.0.0.0:{worker_port}') 
         server.start()
         while True:
             self._poll_and_process()

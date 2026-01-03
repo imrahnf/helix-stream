@@ -1,17 +1,29 @@
 # services/gateway/app/db/repository.py
 import psycopg2
+from psycopg2 import pool, sql
 from psycopg2.extras import RealDictCursor
 import json
+import os
+
+class DatabasePool:
+    _pool = None
+
+    @classmethod
+    def get_pool(cls, db_url):
+        if cls._pool is None:
+            cls._pool = psycopg2.pool.SimpleConnectionPool(1, 20, db_url)
+        return cls._pool
 
 class DatabaseContext:
     def __init__(self, db_url):
-        self.db_url = db_url
+        self.pool = DatabasePool.get_pool(db_url)
         self.conn = None
     def __enter__(self):
-        self.conn = psycopg2.connect(self.db_url)
+        self.conn = self.pool.getconn()
         return EmbeddingRepository(self.conn)
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.conn: self.conn.close()
+        if self.conn:
+            self.pool.putconn(self.conn)
 
 class EmbeddingRepository:
     def __init__(self, conn):
@@ -41,22 +53,22 @@ class EmbeddingRepository:
                 json.dumps(biological_data.get('pdb_ids', []))
             ))
             meta_id = cur.fetchone()[0]
-            table = 'vectors_esm2_8m' if '8M' in model_id else 'vectors_esm2_650m'
-            query_vec = f"INSERT INTO {table} (metadata_id, vector) VALUES (%s, %s) ON CONFLICT (metadata_id) DO UPDATE SET vector = EXCLUDED.vector;"
+            table_name = 'vectors_esm2_8m' if '8M' in model_id else 'vectors_esm2_650m'
+            query_vec = sql.SQL("INSERT INTO {} (metadata_id, vector) VALUES (%s, %s) ON CONFLICT (metadata_id) DO UPDATE SET vector = EXCLUDED.vector;").format(sql.Identifier(table_name))
             cur.execute(query_vec, (meta_id, vector_list))
             self.conn.commit()
 
     def find_similar(self, vector, model_id, limit=5):
-        table = 'vectors_esm2_650m' if '650M' in model_id else 'vectors_esm2_8m'
+        table_name = 'vectors_esm2_650m' if '650M' in model_id else 'vectors_esm2_8m'
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
-            query = f"""
+            query = sql.SQL("""
                 SELECT m.primary_accession, m.protein_name, m.organism, m.is_fallback,
                        (v.vector <=> %s::vector) as distance
-                FROM {table} v
+                FROM {} v
                 JOIN embedding_metadata m ON v.metadata_id = m.id
                 WHERE m.model_id = %s
                 ORDER BY distance ASC LIMIT %s
-            """
+            """).format(sql.Identifier(table_name))
             cur.execute(query, (vector, model_id, limit))
             return cur.fetchall()
 
