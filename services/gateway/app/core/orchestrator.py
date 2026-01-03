@@ -78,28 +78,33 @@ class HelixOrchestrator:
         try:
             with grpc.insecure_channel(target) as channel:
                 stub = health_pb2_grpc.HealthStub(channel)
-                response = stub.Check(health_pb2.HealthCheckRequest(service=""), timeout=1.0)
+                response = stub.Check(health_pb2.HealthCheckRequest(service=""), timeout=0.5)
                 return response.status == health_pb2.HealthCheckResponse.SERVING
-        except Exception: return False
+        except Exception:
+            return False
 
     def _get_vector_data(self, clean_seq: str, model_id: str):
         seq_hash = hashlib.sha256(clean_seq.encode()).hexdigest()
         
+        # Attempt remote
         if "650M" in model_id:
             try:
                 if self._is_worker_online():
                     target = f"{self.remote_host}:{self.remote_port}"
-                    with grpc.insecure_channel(target) as channel:
+                    with grpc.insecure_channel(target, options=[('grpc.enable_retries', 0)]) as channel:
                         stub = cache_pb2_grpc.CacheServiceStub(channel)
-                        stub.SubmitTask(cache_pb2.Task(hash=seq_hash, sequence=clean_seq, model_id=model_id))
-                        for _ in range(10):
-                            res = stub.Get(cache_pb2.KeyRequest(key=seq_hash, model_id=model_id), timeout=1.0)
-                            if res.found: 
-                                # Returning None for confidence as it's not yet computed by model
-                                return json.loads(res.value), model_id, None
+                        stub.SubmitTask(cache_pb2.Task(hash=seq_hash, sequence=clean_seq, model_id=model_id), timeout=1.0)
+                        
+                        for _ in range(12): 
+                            try:
+                                res = stub.Get(cache_pb2.KeyRequest(key=seq_hash, model_id=model_id), timeout=0.5)
+                                if res.found: 
+                                    return json.loads(res.value), model_id, None
+                            except grpc.RpcError:
+                                break 
                             time.sleep(1)
             except Exception as e:
-                logger.warning(f"Remote Worker unavailable: {e}. Falling back.")
+                logger.warning(f"Remote Worker fail: {e}. Falling back to Local 8M.")
 
         # Local Fallback
         logger.info("Executing Local Fallback Inference...")
@@ -130,10 +135,16 @@ class HelixOrchestrator:
             "pdb_ids": []
         }
 
+        is_fallback = (active_model != model_id)
+
         with DatabaseContext(self.db_url) as repo:
-            repo.store_rich_embedding(seq_hash, active_model, vector, data, confidence, is_fallback=(active_model != model_id))
+            repo.store_rich_embedding(seq_hash, active_model, vector, data, confidence, is_fallback=is_fallback)
         
-        return [{"accession": data['accession'], "status": "COMPLETED"}]
+        return [{
+            "accession": data['accession'], 
+            "status": f"COMPLETED_{'LOCAL' if is_fallback else 'REMOTE'}",
+            "model_used": active_model
+        }]
 
     async def ingest_from_uniprot(self, query: str, model_id: str, limit: int = 5):
         raw_results = self.ingestor.fetch_proteins(query, limit)
