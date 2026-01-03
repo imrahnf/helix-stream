@@ -94,7 +94,10 @@ class HelixOrchestrator:
         inputs = self.local_tokenizer(clean_seq, return_tensors="pt")
         with torch.no_grad():
             outputs = self.local_model(**inputs, output_hidden_states=True)
-            return outputs.hidden_states[-1].mean(dim=1).tolist()[0]
+            # MEAN POOLING
+            embeddings = outputs.hidden_states[-1].mean(dim=1)
+            normalized = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+            return normalized.tolist()[0]
 
     async def ingest_from_uniprot(self, query: str, model_id: str, limit: int = 5):
         raw_results = self.ingestor.fetch_proteins(query, limit)

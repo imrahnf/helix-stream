@@ -52,8 +52,9 @@ class HelixWorker:
                 
                 with torch.no_grad():
                     outputs = self.model(**inputs, output_hidden_states=True)
-                    # Extract the mean of the last hidden layer
-                    vector = outputs.hidden_states[-1].mean(dim=1).tolist()[0]
+                    embeddings = outputs.hidden_states[-1].mean(dim=1)
+                    normalized = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+                    vector = normalized.tolist()[0]
                 
                 entry = cache_pb2.BatchResult.Entry(
                     key=task.hash, 
