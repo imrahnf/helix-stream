@@ -1,4 +1,5 @@
 # services/gateway/app/core/structure.py
+import json
 from typing import Dict, Any
 
 class StructureOrchestrator:
@@ -8,20 +9,40 @@ class StructureOrchestrator:
     @classmethod
     def generate_manifest(cls, protein_data: Dict[str, Any]) -> Dict[str, Any]:
         accession = protein_data.get("primary_accession")
-        # Handle cases where DB results might be stringified JSON or dicts
-        pdb_ids = protein_data.get("pdb_ids", [])
-        binding_sites = protein_data.get("binding_sites", [])
+        
+        pdb_ids = protein_data.get("pdb_ids")
+        if pdb_ids is None: pdb_ids = []
+        
+        binding_sites = protein_data.get("binding_sites")
+        if binding_sites is None: binding_sites = []
 
-        if pdb_ids and len(pdb_ids) > 0:
+        # PDB Priority Logic
+        if len(pdb_ids) > 0:
             primary_id = pdb_ids[0]
-            source, url = "RCSB_PDB", cls.PDB_BASE_URL.format(id=primary_id)
+            source = "RCSB_PDB"
+            url = cls.PDB_BASE_URL.format(id=primary_id)
+            is_verified = True
         else:
             primary_id = accession
-            source, url = "ALPHAFOLD_DB", cls.ALPHAFOLD_BASE_URL.format(id=primary_id)
+            source = "ALPHAFOLD_DB"
+            url = cls.ALPHAFOLD_BASE_URL.format(id=primary_id)
+            is_verified = False
 
         return {
             "accession": accession,
-            "structure": {"id": primary_id, "source": source, "url": url},
-            "annotations": {"residue_highlights": binding_sites},
-            "metadata": {"name": protein_data.get("protein_name"), "organism": protein_data.get("organism")}
+            "structure": {
+                "id": primary_id,
+                "source": source,
+                "url": url,
+                "is_verified": is_verified
+            },
+            "annotations": {
+                "residue_highlights": binding_sites
+            },
+            "metadata": {
+                "name": protein_data.get("protein_name"),
+                "organism": protein_data.get("organism"),
+                "function": protein_data.get("function_text"),
+                "fidelity": "ESM2-650M (High-Resolution)" if not protein_data.get("is_fallback") else "ESM2-8M (Standard)"
+            }
         }
