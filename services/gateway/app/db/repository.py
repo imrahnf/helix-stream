@@ -7,11 +7,9 @@ class DatabaseContext:
     def __init__(self, db_url):
         self.db_url = db_url
         self.conn = None
-
     def __enter__(self):
         self.conn = psycopg2.connect(self.db_url)
         return EmbeddingRepository(self.conn)
-    
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.conn: self.conn.close()
 
@@ -19,7 +17,7 @@ class EmbeddingRepository:
     def __init__(self, conn):
         self.conn = conn
 
-    def store_rich_embedding(self, seq_hash, model_id, vector_data, biological_data, confidence_score=0.0, is_fallback=False):
+    def store_rich_embedding(self, seq_hash, model_id, vector_data, biological_data, confidence_score, is_fallback=False):
         vector_list = json.loads(vector_data) if isinstance(vector_data, str) else vector_data
         with self.conn.cursor() as cur:
             query_meta = """
@@ -31,9 +29,8 @@ class EmbeddingRepository:
                 SET confidence_score = EXCLUDED.confidence_score,
                     is_fallback = EXCLUDED.is_fallback,
                     protein_name = EXCLUDED.protein_name,
-                    function_text = EXCLUDED.function_text,
-                    binding_sites = EXCLUDED.binding_sites,
-                    pdb_ids = EXCLUDED.pdb_ids
+                    pdb_ids = EXCLUDED.pdb_ids,
+                    binding_sites = EXCLUDED.binding_sites
                 RETURNING id;
             """
             cur.execute(query_meta, (
@@ -44,21 +41,12 @@ class EmbeddingRepository:
                 json.dumps(biological_data.get('pdb_ids', []))
             ))
             meta_id = cur.fetchone()[0]
-            table = 'vectors_esm2_8m' if model_id == 'esm2_t6_8M_UR50D' else 'vectors_esm2_650m'
+            table = 'vectors_esm2_8m' if '8M' in model_id else 'vectors_esm2_650m'
             query_vec = f"INSERT INTO {table} (metadata_id, vector) VALUES (%s, %s) ON CONFLICT (metadata_id) DO UPDATE SET vector = EXCLUDED.vector;"
             cur.execute(query_vec, (meta_id, vector_list))
             self.conn.commit()
 
     def find_similar(self, vector, model_id, limit=5):
-        # Try primary table
-        results = self._query_table(vector, model_id, limit)
-        if results: return results
-        
-        # Try secondary table
-        alt_model = "esm2_t6_8M_UR50D" if "650M" in model_id else "esm2_t33_650M_UR50D"
-        return self._query_table(vector, alt_model, limit)
-
-    def _query_table(self, vector, model_id, limit):
         table = 'vectors_esm2_650m' if '650M' in model_id else 'vectors_esm2_8m'
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
             query = f"""
@@ -74,14 +62,16 @@ class EmbeddingRepository:
 
     def get_embedding_by_accession(self, accession: str, model_id: str):
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Check requested model first, then any model
-            cur.execute("SELECT * FROM embedding_metadata WHERE primary_accession = %s AND model_id = %s", (accession, model_id))
+            cur.execute("SELECT * FROM embedding_metadata WHERE primary_accession = %s LIMIT 1", (accession,))
             row = cur.fetchone()
-            if not row:
-                cur.execute("SELECT * FROM embedding_metadata WHERE primary_accession = %s LIMIT 1", (accession,))
-                row = cur.fetchone()
-            
             if not row: return None
+            # Fix JSON loading
             for key in ['pdb_ids', 'binding_sites']:
-                if isinstance(row.get(key), str): row[key] = json.loads(row[key])
+                if row.get(key) and isinstance(row[key], str):
+                    row[key] = json.loads(row[key])
             return row
+            
+    def get_all_summaries(self, limit=100):
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT primary_accession, protein_name, organism, is_fallback, model_id FROM embedding_metadata LIMIT %s", (limit,))
+            return cur.fetchall()

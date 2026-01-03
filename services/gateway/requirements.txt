@@ -18,3 +18,4 @@ protobuf==6.33.2
 torch
 transformers
 httpx
+python-multipart
