@@ -71,7 +71,6 @@ class HelixWorker:
         with torch.no_grad():
             outputs = self.model(**inputs, output_hidden_states=True)
             
-            # Get Vector
             # hidden_states[-1] is the last layer
             embeddings = outputs.hidden_states[-1].mean(dim=1)
             
