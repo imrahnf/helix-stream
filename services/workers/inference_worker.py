@@ -20,8 +20,14 @@ class HelixWorker:
         self.local_model_name = f"facebook/{self.model_id}"
         logging.info(f"--- STARTING GPU WORKER: {self.model_id} ---")
         
+        logging.info("Loading tokenizer...")
         self.tokenizer = AutoTokenizer.from_pretrained(self.local_model_name)
+        logging.info("Tokenizer loaded.")
+        
+        logging.info("Loading model...")
         self.model = AutoModelForMaskedLM.from_pretrained(self.local_model_name)
+        logging.info("Model loaded.")
+        
         self.model.eval()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
