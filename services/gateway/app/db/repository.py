@@ -158,7 +158,23 @@ class EmbeddingRepository:
                     row[key] = json.loads(row[key])
             return row
             
-    def get_all_summaries(self, limit=100):
+    def get_all_summaries(self, limit=1000):
+        # CHANGED: Dynamic retrieval for both 1280D (Titan) and 320D (Fallback) vectors
+        # We use COALESCE to grab the vector from whichever table it resides in.
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT primary_accession, protein_name, organism, is_fallback, model_id FROM embedding_metadata LIMIT %s", (limit,))
+            cur.execute("""
+                SELECT 
+                    m.primary_accession, 
+                    m.protein_name, 
+                    m.organism, 
+                    m.is_fallback, 
+                    m.model_id, 
+                    m.confidence_score,
+                    COALESCE(v650.vector, v8.vector) as vector
+                FROM embedding_metadata m
+                LEFT JOIN vectors_esm2_650m v650 ON m.id = v650.metadata_id
+                LEFT JOIN vectors_esm2_8m v8 ON m.id = v8.metadata_id
+                WHERE v650.vector IS NOT NULL OR v8.vector IS NOT NULL
+                LIMIT %s
+            """, (limit,))
             return cur.fetchall()
