@@ -32,7 +32,7 @@ CREATE TABLE embedding_metadata (
     binding_sites JSONB DEFAULT '[]'::jsonb,
     pdb_ids JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (sequence_hash, model_id)
+    UNIQUE (primary_accession, model_id)
 );
 
 -- Vector Tables

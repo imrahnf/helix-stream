@@ -1,4 +1,8 @@
 # personal files to reference
+*.fasta
+test_library.fasta
+test_endpoints.py
+seed_db.py
 seed.py
 test.py
 OVERVIEW.md

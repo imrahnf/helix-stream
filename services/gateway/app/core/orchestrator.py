@@ -1,4 +1,49 @@
 # services/gateway/app/core/orchestrator.py
+
+"""
+================================================================================
+MODULE: HelixOrchestrator & UniProtIngestor
+PURPOSE: Central coordination layer for protein ingestion, embedding computation,
+         and distributed inference across macOS Gateway and Windows GPU Worker.
+
+KEY RESPONSIBILITIES:
+  - Orchestrate remote GPU inference via gRPC with intelligent failover
+  - Parse UniProt REST API responses into rich protein metadata (sequence, PDB,
+    organism, function, binding annotations)
+  - Sanitize and validate amino acid sequences (strict ACDEFGHIKLMNPQRSTVWY)
+  - Compute 1280-D ESM2 embeddings: Primary path (Windows 650M) → Fallback
+    (macOS CPU 8M)
+  - Hash sequences for deduplication and fast lookups
+  - Persist embeddings + metadata to PostgreSQL with confidence scores
+
+DATA FLOW:
+  INPUT:
+    - Raw FASTA sequences (manual) or UniProt accession IDs (e.g., "P01308")
+    - Sequence strings up to 1022 amino acids
+  OUTPUT:
+    - Normalized 1280-D float vectors (L2-normalized)
+    - Confidence scores derived from output entropy
+    - Protein metadata: accession, name, organism, function, PDB IDs, binding sites
+    - Status indicators: "COMPLETED_REMOTE" | "COMPLETED_LOCAL"
+
+INFRASTRUCTURE ROLE:
+  This is the brain of the distributed system. It decides whether to use the
+  high fidelity Windows GPU/Model (650M params, 1280D) or fall back to the local
+  macOS CPU (8M params, 320D) based on network health. Ensures graceful
+  degradation without user facing failures.
+
+ERROR HANDLING STRATEGY:
+  - Sequence Validation: Regex-based strict AA filtering; raises 400 on invalid
+  - gRPC Failover: Polls remote worker with exponential backoff (12 retries, 1s
+    between). Times out at 2.0s for SubmitTask, 1.0s for Get. Falls through to
+    local 8M model on any RpcError.
+  - Network Resilience: Health check via HealthServicer before attempting remote
+  - Confidence Scoring: Derived from softmax entropy
+  - Resource Cleanup: No long-lived connections; all gRPC channels scoped to
+    request lifetime
+================================================================================
+"""
+
 import os, hashlib, torch, json, logging, requests, grpc, time, re
 from typing import List, Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModelForMaskedLM

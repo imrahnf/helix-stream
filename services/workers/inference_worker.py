@@ -1,5 +1,63 @@
-# $env:MODEL_ID="esm2_t33_650M_UR50D"; $env:TITAN_CACHE_HOST="localhost"; python services/workers/inference_worker.py
+# TEST ON WINDOWS (from root): env:MODEL_ID="esm2_t33_650M_UR50D"; $env:TITAN_CACHE_HOST="localhost"; python services/workers/inference_worker.py
 # services/workers/inference_worker.py
+
+"""
+================================================================================
+MODULE: HelixWorker & HealthServicer (GPU/CPU (fallback) Worker)
+PURPOSE: Compute ESM2-650M protein embeddings on Windows GPU via gRPC polling.
+         Registers health status, leases inference tasks, and returns 1280-D
+         vectors with confidence scores to TitanCache coordinator.
+
+KEY RESPONSIBILITIES:
+  - Load ESM2-650M tokenizer and model from HuggingFace (one time init)
+  - Poll TitanCache gRPC service for pending inference tasks
+  - Execute forward pass: sequence → hidden states → embeddings → L2
+    normalization
+  - Calculate confidence scores from output logit entropy
+  - Submit completed batches (key, embedding_json, confidence) to cache
+  - Expose health check endpoint (HealthServicer) for orchestrator validation
+
+DATA FLOW:
+  INPUT (gRPC):
+    LeaseRequest: target_model_id, max_batch_size
+    Response: [Task(hash, sequence, model_id), ...]
+  PROCESSING:
+    - Tokenize sequence (HuggingFace BPE tokenizer)
+    - Forward pass: AutoModelForMaskedLM(**inputs, output_hidden_states=True)
+    - Extract final hidden layer, mean-pool over sequence, L2-normalize
+    - Entropy-based confidence: 1 - (entropy / log(20)) ∈ [0, 1]
+  OUTPUT (gRPC):
+    BatchResult: [Entry(key, embedding_json, confidence_score), ...]
+
+INFRASTRUCTURE ROLE:
+  The GPU compute node in the distributed system. Runs on Windows with CUDA.
+  Offloads heavy ESM2-650M inference from macOS Gateway. TitanCache coordinates
+  task distribution; HelixOrchestrator on macOS polls results. Single-worker
+  design (can be scaled horizontally with multiple instances).
+
+RESOURCE MANAGEMENT:
+  - Model Loading: ESM2-650M (~1.3 GB) loaded once on startup
+  - Device Selection: Automatically detects CUDA; falls back to CPU if unavailable
+  - Channel Cleanup: atexit handler ensures gRPC channel is closed gracefully
+  - Memory: No explicit batching within loop (max_batch_size=1 for stability)
+
+ERROR HANDLING STRATEGY:
+  - Model Load Failures: Logged and re-raised (fatal on startup)
+  - Sequence Errors: Truncated to 1022 AA; non-AA chars stripped by orchestrator
+  - gRPC Connection Loss: Handled by TitanCache retry logic; worker continues
+    polling
+  - Confidence Calculation: Entropy from logits; clipped to [0, 1] range
+  - Task Processing Loop: Catch-all exception handler logs errors without
+    crashing worker
+
+ENVIRONMENT VARIABLES:
+  - MODEL_ID: "esm2_t33_650M_UR50D" (default)
+  - TITAN_CACHE_HOST: IP/hostname of TitanCache service (default: localhost)
+  - TITAN_CACHE_PORT: gRPC port for cache (default: 9090)
+  - WORKER_PORT: Health check port (default: 50051)
+================================================================================
+"""
+
 import os, sys, logging, json, torch, time, grpc, atexit
 from concurrent import futures
 from transformers import AutoTokenizer, AutoModelForMaskedLM

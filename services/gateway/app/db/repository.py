@@ -1,4 +1,54 @@
 # services/gateway/app/db/repository.py
+
+"""
+================================================================================
+MODULE: DatabasePool, DatabaseContext, EmbeddingRepository
+PURPOSE: Abstraction layer for PostgreSQL operations with connection pooling,
+         HNSW vector similarity search, and transactional consistency.
+
+KEY RESPONSIBILITIES:
+  - Manage reusable PostgreSQL connection pool (1-20 concurrent connections)
+  - Store embeddings + metadata with ON CONFLICT logic (unique on
+    primary_accession + model_id)
+  - Execute HNSW cosine distance queries for nearest-neighbor search
+  - Handle JSON serialization for pdb_ids and binding_sites
+  - Fallback accession lookup (exact model match → any model)
+  - Batch retrieval for dashboard initialization (get_all_summaries)
+
+DATA FLOW:
+  INPUT:
+    - store_rich_embedding: seq_hash, model_id, vector (1280-D float list),
+      biological_data (dict), confidence_score, is_fallback flag
+    - find_similar: query vector, model_id, limit (K)
+    - get_embedding_by_accession: accession string, model_id
+  OUTPUT:
+    - Persisted rows in vectors_esm2_650m or vectors_esm2_8m (HNSW indexed)
+    - Search results: accession, protein_name, organism, is_fallback, distance
+    - Metadata summaries: accession, name, organism, model_id
+
+INFRASTRUCTURE ROLE:
+  The persistent data layer. Maintains the ground truth of all ingested
+  proteins, their embeddings, and 3D structure links. Connection pooling ensures
+  the macOS Gateway can handle concurrent ingest/search requests without
+  connection exhaustion.
+
+ERROR HANDLING STRATEGY:
+  - ON CONFLICT Logic: Handles duplicate accession&model ingestions by
+    updating
+  - Fallback Queries: If exact model_id not found, retrieve any model for
+    the accession (graceful degradation for cross-model lookups)
+  - Connection Pool: Raises exception if pool exhausted (set pool max=20)
+  - SQL Injection Prevention: Use psycopg2.sql.Identifier for dynamic table
+    names; parameterized queries for all user input
+
+PERFORMANCE NOTES:
+  - HNSW Indexes: Created with m=16, ef_construction=128 for 1280-D vectors
+  - Unique Constraint: (primary_accession, model_id) allows multiple accessions
+    per sequence but prevents duplicate embeddings for same protein+model
+  - Partial Indexes: Organism-based B-tree indexes for quick organism filters
+================================================================================
+"""
+
 import psycopg2
 from psycopg2 import pool, sql
 from psycopg2.extras import RealDictCursor
@@ -91,7 +141,7 @@ class EmbeddingRepository:
             row = cur.fetchone()
             
             if not row:
-                # Fallback: get any model for this accession
+                # Fallback- get any model for this accession
                 cur.execute("""
                     SELECT * FROM embedding_metadata 
                     WHERE primary_accession = %s 
