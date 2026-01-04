@@ -17,20 +17,28 @@ orchestrator = HelixOrchestrator()
 
 @app.post("/v1/ingest")
 async def ingest_data(
-    query: Optional[str] = Query(None), 
-    sequence: Optional[str] = Body(None, embed=True),
-    limit: int = 5, 
-    model_id: str = "esm2_t6_8M_UR50D"
-):
-    # Direct Sequence Paste
-    if sequence and len(sequence) > 10:
-        return await orchestrator.ingest_manual_sequence(sequence, model_id)
+        query: Optional[str] = Query(None), 
+        sequence: Optional[str] = Body(None, embed=True),
+        limit: int = 5, 
+        model_id: str = "esm2_t6_8M_UR50D"
+    ):
+    # Validate input before processing
+    clean_sequence = sequence.strip() if sequence else None
+    clean_query = query.strip() if query else None
     
-    # UniProt Search
-    if query:
-        return await orchestrator.ingest_from_uniprot(query, model_id, limit)
-        
-    raise HTTPException(status_code=400, detail="Must provide 'query' or 'sequence'")
+    if not clean_sequence and not clean_query:
+        raise HTTPException(status_code=400, detail="Missing 'query' or 'sequence' parameter")
+    
+    try:
+        if clean_sequence and len(clean_sequence) > 10:
+            return await orchestrator.ingest_manual_sequence(clean_sequence, model_id)
+        if clean_query:
+            return await orchestrator.ingest_from_uniprot(clean_query, model_id, limit)
+        raise HTTPException(status_code=400, detail="Sequence too short (minimum 10 characters)")
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @app.post("/v1/search")
 async def search_similar(
@@ -47,7 +55,7 @@ async def search_similar(
 async def get_structure(accession: str, model_id: str = Query("esm2_t6_8M_UR50D")): 
     manifest = await orchestrator.get_structure_data(accession, model_id)
     if not manifest:
-        raise HTTPException(status_code=404, detail="Protein not found")
+        raise HTTPException(status_code=404, detail=f"Protein {accession} not found in database")
     return manifest
 
 @app.get("/v1/embeddings")
