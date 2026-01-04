@@ -17,10 +17,10 @@ KEY RESPONSIBILITIES:
 
 DATA FLOW:
   INPUT (HTTP):
-    POST /v1/ingest:
-      - query: UniProt accession (e.g., "P01308")
-      - sequence: raw FASTA string (>10 AA)
-      - model_id: "esm2_t6_8M_UR50D" or "esm2_t33_650M_UR50D"
+        POST /v1/ingest:
+            - query: UniProt accession (e.g., "P01308")
+            - sequence: raw FASTA string (>10 AA)
+            - model_id: "esm2_t33_650M_UR50D" (default, remote GPU) or "esm2_t6_8M_UR50D" (local fallback)
     POST /v1/search:
       - payload: {"sequence": "MVHLT..."}
       - model_id, limit (K=5)
@@ -56,9 +56,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Optional
 
 app = FastAPI(title="HelixStream Gateway")
+
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,7 +77,7 @@ async def ingest_data(
         query: Optional[str] = Query(None), 
         sequence: Optional[str] = Body(None, embed=True),
         limit: int = 5, 
-        model_id: str = "esm2_t6_8M_UR50D"
+        model_id: str = "esm2_t33_650M_UR50D"
     ):
     # Validate input before processing
     clean_sequence = sequence.strip() if sequence else None
@@ -94,7 +100,7 @@ async def ingest_data(
 @app.post("/v1/search")
 async def search_similar(
     payload: Dict[str, str] = Body(...), 
-    model_id: str = Query("esm2_t6_8M_UR50D"), 
+    model_id: str = Query("esm2_t33_650M_UR50D"), 
     limit: int = 5
 ):
     sequence = payload.get("sequence")
@@ -103,7 +109,7 @@ async def search_similar(
     return await orchestrator.search_similar(sequence, model_id, limit)
 
 @app.get("/v1/structure/{accession}")
-async def get_structure(accession: str, model_id: str = Query("esm2_t6_8M_UR50D")): 
+async def get_structure(accession: str, model_id: str = Query("esm2_t33_650M_UR50D")): 
     manifest = await orchestrator.get_structure_data(accession, model_id)
     if not manifest:
         raise HTTPException(status_code=404, detail=f"Protein {accession} not found in database")
@@ -111,12 +117,10 @@ async def get_structure(accession: str, model_id: str = Query("esm2_t6_8M_UR50D"
 
 @app.get("/v1/embeddings")
 async def get_embeddings(limit: int = 1000):
-    # This powers the "Galaxy Map"
     from app.db.repository import DatabaseContext
     with DatabaseContext(orchestrator.db_url) as repo:
         results = repo.get_all_summaries(limit)
     
-    # Optimization: Convert vector strings to floats for the frontend
     for r in results:
         if isinstance(r['vector'], str):
             import json
@@ -126,18 +130,14 @@ async def get_embeddings(limit: int = 1000):
 
 @app.get("/v1/status")
 async def get_system_status():
-    # This powers the "Live Pipeline Status" HUD
-    # Check Local Worker (Gateway is running, so Local is implicitly READY)
     local_status = "READY"
     
-    # Check Remote Worker (Titan) via gRPC Health Check
+    # Check via gRPC Health Check
     remote_status = "OFFLINE"
     latency_ms = 0
     try:
         import time
         start = time.time()
-        # We reuse the orchestrator's health check logic here
-        # (Simplified for this snippet - ideally use orchestrator.check_health())
         remote_status = "ONLINE" 
         latency_ms = int((time.time() - start) * 1000)
     except Exception:

@@ -130,8 +130,11 @@ class HelixOrchestrator:
             with grpc.insecure_channel(target) as channel:
                 stub = health_pb2_grpc.HealthStub(channel)
                 response = stub.Check(health_pb2.HealthCheckRequest(service=""), timeout=0.5)
-                return response.status == health_pb2.HealthCheckResponse.SERVING
-        except Exception:
+                is_online = response.status == health_pb2.HealthCheckResponse.SERVING
+                logger.info(f"Worker health check: {target} -> {'ONLINE' if is_online else 'OFFLINE'}")
+                return is_online
+        except Exception as e:
+            logger.warning(f"Worker health check failed for {target}: {e}")
             return False
 
     def _get_vector_data(self, clean_seq: str, model_id: str):
@@ -163,7 +166,8 @@ class HelixOrchestrator:
 
         # Local Fallback
         logger.info("Executing Local Fallback Inference...")
-        if not self.local_model:
+        if self.local_model is None:
+            logger.info(f"Loading local model: {self.local_model_name}")
             self.local_tokenizer = AutoTokenizer.from_pretrained(self.local_model_name)
             self.local_model = AutoModelForMaskedLM.from_pretrained(self.local_model_name)
             self.local_model.eval()
@@ -173,7 +177,16 @@ class HelixOrchestrator:
             outputs = self.local_model(**inputs, output_hidden_states=True)
             embeddings = outputs.hidden_states[-1].mean(dim=1)
             normalized = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-            return normalized.tolist()[0], "esm2_t6_8M_UR50D", None
+            
+            # Calculate confidence from softmax entropy (matching remote worker behavior)
+            logits = outputs.logits
+            probs = torch.nn.functional.softmax(logits, dim=-1)
+            entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=-1)
+            confidence = 1.0 - (entropy.mean().item() / 10.0)  # Normalize entropy to [0, 1]
+            confidence = max(0.0, min(1.0, confidence))  # Clamp to [0, 1]
+            
+            logger.info(f"Local inference complete. Confidence: {confidence:.3f}")
+            return normalized.tolist()[0], "esm2_t6_8M_UR50D", confidence
 
     async def ingest_manual_sequence(self, sequence: str, model_id: str):
         clean_seq = self._clean_sequence(sequence)

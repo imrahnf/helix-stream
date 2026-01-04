@@ -1,4 +1,7 @@
-# personal files to reference
+# files i added mysewlf to ignore
+!/frontend/lib/**
+!/frontend/lib/
+!/frontend/lib
 *.fasta
 test_library.fasta
 test_endpoints.py

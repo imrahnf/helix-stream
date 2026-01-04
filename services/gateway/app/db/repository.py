@@ -40,12 +40,6 @@ ERROR HANDLING STRATEGY:
   - Connection Pool: Raises exception if pool exhausted (set pool max=20)
   - SQL Injection Prevention: Use psycopg2.sql.Identifier for dynamic table
     names; parameterized queries for all user input
-
-PERFORMANCE NOTES:
-  - HNSW Indexes: Created with m=16, ef_construction=128 for 1280-D vectors
-  - Unique Constraint: (primary_accession, model_id) allows multiple accessions
-    per sequence but prevents duplicate embeddings for same protein+model
-  - Partial Indexes: Organism-based B-tree indexes for quick organism filters
 ================================================================================
 """
 
@@ -84,7 +78,7 @@ class EmbeddingRepository:
         accession = biological_data.get('accession')
         
         with self.conn.cursor() as cur:
-            # Try to insert or update based on unique constraint (accession, model)
+            # Try to insert or update based on unique (accession, model)
             query_meta = """
                 INSERT INTO embedding_metadata 
                 (sequence_hash, model_id, confidence_score, is_fallback, sequence_text, 
@@ -159,8 +153,6 @@ class EmbeddingRepository:
             return row
             
     def get_all_summaries(self, limit=1000):
-        # CHANGED: Dynamic retrieval for both 1280D (Titan) and 320D (Fallback) vectors
-        # We use COALESCE to grab the vector from whichever table it resides in.
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
                 SELECT 
