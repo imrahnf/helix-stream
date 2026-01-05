@@ -1,47 +1,21 @@
-# services/gateway/app/core/orchestrator.py
-
 """
-================================================================================
-MODULE: HelixOrchestrator & UniProtIngestor
-PURPOSE: Central coordination layer for protein ingestion, embedding computation,
-         and distributed inference across macOS Gateway and Windows GPU Worker.
-
-KEY RESPONSIBILITIES:
-  - Orchestrate remote GPU inference via gRPC with intelligent failover
-  - Parse UniProt REST API responses into rich protein metadata (sequence, PDB,
-    organism, function, binding annotations)
-  - Sanitize and validate amino acid sequences (strict ACDEFGHIKLMNPQRSTVWY)
-  - Compute 1280-D ESM2 embeddings: Primary path (Windows 650M) → Fallback
-    (macOS CPU 8M)
-  - Hash sequences for deduplication and fast lookups
-  - Persist embeddings + metadata to PostgreSQL with confidence scores
-
-DATA FLOW:
-  INPUT:
-    - Raw FASTA sequences (manual) or UniProt accession IDs (e.g., "P01308")
-    - Sequence strings up to 1022 amino acids
-  OUTPUT:
-    - Normalized 1280-D float vectors (L2-normalized)
-    - Confidence scores derived from output entropy
-    - Protein metadata: accession, name, organism, function, PDB IDs, binding sites
-    - Status indicators: "COMPLETED_REMOTE" | "COMPLETED_LOCAL"
-
-INFRASTRUCTURE ROLE:
-  This is the brain of the distributed system. It decides whether to use the
-  high fidelity Windows GPU/Model (650M params, 1280D) or fall back to the local
-  macOS CPU (8M params, 320D) based on network health. Ensures graceful
-  degradation without user facing failures.
-
-ERROR HANDLING STRATEGY:
-  - Sequence Validation: Regex-based strict AA filtering; raises 400 on invalid
-  - gRPC Failover: Polls remote worker with exponential backoff (12 retries, 1s
-    between). Times out at 2.0s for SubmitTask, 1.0s for Get. Falls through to
-    local 8M model on any RpcError.
-  - Network Resilience: Health check via HealthServicer before attempting remote
-  - Confidence Scoring: Derived from softmax entropy
-  - Resource Cleanup: No long-lived connections; all gRPC channels scoped to
-    request lifetime
-================================================================================
+File Overview: Central orchestrator for HelixStream ingestion/search, unifying UniProt fetch, sequence validation, and embedding inference.
+Responsibilities:
+- Clean and validate amino acid sequences, hash for deduplication, and manage model selection.
+- Drive remote GPU inference via gRPC with health checks/timeouts and gracefully fall back to local CPU ESM2 8M.
+- Ingest manual or UniProt-sourced proteins, compute embeddings with confidence, and persist metadata/vectors to PostgreSQL.
+- Serve similarity search vectors and structure manifests on demand.
+Data Flow:
+- Inputs: raw sequences or UniProt queries, model_id hints, repo connections; receives worker responses via gRPC.
+- Outputs: stored embeddings/metadata rows, status payloads for ingestion, similarity search results, structure manifests.
+System Integration:
+- Talks to Windows GPU worker (cache service) over gRPC, UniProt REST API, HuggingFace models locally, and PostgreSQL via DatabaseContext.
+- Used by FastAPI endpoints to fulfill ingest/search/structure requests.
+Technical Details:
+- Caps sequences to 1022 AA, uses entropy-based confidence from logits, normalizes embeddings, and handles model-specific table selection.
+- Remote inference polling with bounded retries; local tokenizer/model lazily loaded and kept for reuse.
+Future Considerations:
+- Parameterize timeouts/backoff, add worker pool management, and prefetch/tokenize for batch throughput.
 """
 
 import os, hashlib, torch, json, logging, requests, grpc, time, re
@@ -129,7 +103,7 @@ class HelixOrchestrator:
         try:
             with grpc.insecure_channel(target) as channel:
                 stub = health_pb2_grpc.HealthStub(channel)
-                response = stub.Check(health_pb2.HealthCheckRequest(service=""), timeout=0.5)
+                response = stub.Check(health_pb2.HealthCheckRequest(service=""), timeout=2.0)
                 is_online = response.status == health_pb2.HealthCheckResponse.SERVING
                 logger.info(f"Worker health check: {target} -> {'ONLINE' if is_online else 'OFFLINE'}")
                 return is_online
@@ -151,12 +125,18 @@ class HelixOrchestrator:
                             stub.SubmitTask(cache_pb2.Task(hash=seq_hash, sequence=clean_seq, model_id=model_id), timeout=2.0)
                         except grpc.RpcError as e:
                             logger.error(f"SubmitTask failed: {e.code()} - {e.details()}")
-                            raise e
+                            # Don't re-raise, let it fall through to local fallback
 
-                        for _ in range(12): 
+                        # Poll for result with timeout
+                        start_time = time.time()
+                        for _ in range(12):
+                            if time.time() - start_time > 10:  # 10 second max wait
+                                logger.warning("Remote inference timeout after 10s, falling back to local")
+                                break
                             try:
                                 res = stub.Get(cache_pb2.KeyRequest(key=seq_hash, model_id=model_id), timeout=1.0)
                                 if res.found: 
+                                    logger.info(f"Remote inference complete. Confidence: {res.confidence_score:.3f}")
                                     return json.loads(res.value), model_id, res.confidence_score
                             except grpc.RpcError:
                                 pass # Retry loop
@@ -165,7 +145,7 @@ class HelixOrchestrator:
                 logger.warning(f"Remote Worker fail: {e}. Falling back to Local 8M.")
 
         # Local Fallback
-        logger.info("Executing Local Fallback Inference...")
+        logger.warning("SYSTEM FALLBACK: Executing inference on local CPU (M2 8M model)")
         if self.local_model is None:
             logger.info(f"Loading local model: {self.local_model_name}")
             self.local_tokenizer = AutoTokenizer.from_pretrained(self.local_model_name)
@@ -204,9 +184,15 @@ class HelixOrchestrator:
         }
 
         is_fallback = (active_model != model_id)
-
+        
+        # Store with actual model_id (8M or 650M) to match vector dimensions
         with DatabaseContext(self.db_url) as repo:
             repo.store_rich_embedding(seq_hash, active_model, vector, data, confidence, is_fallback=is_fallback)
+        
+        if is_fallback:
+            logger.warning(f"FALLBACK MODE ACTIVE: Using local CPU (M2 8M) instead of remote GPU (RX 6800 650M)")
+        else:
+            logger.info(f"REMOTE MODE: Using GPU worker (RX 6800 650M)")
         
         return [{
             "accession": data['accession'], 
@@ -223,7 +209,16 @@ class HelixOrchestrator:
                 clean_seq = self._clean_sequence(data['sequence'])
                 seq_hash = hashlib.sha256(clean_seq.encode()).hexdigest()
                 vector, active_model, confidence = self._get_vector_data(clean_seq, model_id)
-                repo.store_rich_embedding(seq_hash, active_model, vector, data, confidence, is_fallback=(active_model != model_id))
+                is_fallback = (active_model != model_id)
+                
+                # Store with actual model_id to match vector dimensions
+                repo.store_rich_embedding(seq_hash, active_model, vector, data, confidence, is_fallback=is_fallback)
+                
+                if is_fallback:
+                    logger.warning(f"FALLBACK MODE: {data['accession']} computed with local CPU (M2 8M)")
+                else:
+                    logger.info(f"REMOTE MODE: {data['accession']} computed with GPU (RX 6800 650M)")
+                
                 processed.append({"accession": data['accession'], "name": data['name'], "status": "COMPLETED"})
         return processed
 

@@ -1,0 +1,215 @@
+'use client';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import ForceGraph3D from 'react-force-graph-3d';
+import * as THREE from 'three';
+import { useStore } from '@/lib/store';
+import { api, cosineSimilarity, findNearestNeighbors } from '@/lib/api';
+
+export default function ForceGraphView() {
+  const { nodes, setNodes, selectNode, selectedNode, neighborLinks, setNeighborLinks } = useStore();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const graphRef = useRef<any>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [hoveredNode, setHoveredNode] = useState<any>(null);
+
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) setSize({ width: containerRef.current.offsetWidth, height: containerRef.current.offsetHeight });
+    };
+    window.addEventListener('resize', updateSize);
+    updateSize();
+
+    api.getEmbeddings().then(data => {
+      console.log('ForceGraphView: Loaded', data.length, 'proteins from API');
+      const mappedNodes = data.map((e: any) => ({
+        ...e,
+        id: e.primary_accession,
+        // Smaller initial spread for better clustering
+        x: (e.vector?.[0] || (Math.random() - 0.5)) * 300,
+        y: (e.vector?.[1] || (Math.random() - 0.5)) * 300,
+        z: (e.vector?.[2] || (Math.random() - 0.5)) * 300,
+        // Dynamic size based on confidence
+        val: 5 + (e.confidence_score || 0.5) * 10
+      }));
+      console.log('ForceGraphView: Mapped nodes sample:', mappedNodes[0]);
+      setNodes(mappedNodes);
+    });
+
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  // Calculate neighbor links when selected node changes
+  useEffect(() => {
+    if (selectedNode && selectedNode.vector) {
+      const neighbors = findNearestNeighbors(selectedNode, nodes, 5);
+      const links = neighbors.map(({ node }) => ({
+        source: selectedNode.primary_accession,
+        target: node.primary_accession
+      }));
+      setNeighborLinks(links);
+    } else {
+      setNeighborLinks(null);
+    }
+  }, [selectedNode, nodes, setNeighborLinks]);
+
+  // Show neighbor links on hover (temporary)
+  const [hoverLinks, setHoverLinks] = useState<Array<{ source: string; target: string }> | null>(null);
+  
+  useEffect(() => {
+    if (hoveredNode && hoveredNode.vector && hoveredNode.primary_accession !== selectedNode?.primary_accession) {
+      const neighbors = findNearestNeighbors(hoveredNode, nodes, 5);
+      const links = neighbors.map(({ node }) => ({
+        source: hoveredNode.primary_accession,
+        target: node.primary_accession
+      }));
+      setHoverLinks(links);
+    } else {
+      setHoverLinks(null);
+    }
+  }, [hoveredNode, selectedNode, nodes]);
+
+  // NO cluster links - only show neighbor links on selection for performance
+  // This eliminates O(n²) computation that was destroying performance
+
+  // Only show neighbor and hover links - no cluster links for performance
+  const graphData = useMemo(() => {
+    const allLinks: Array<any> = [];
+    
+    // Add neighbor links when node is selected
+    if (neighborLinks) {
+      allLinks.push(...neighborLinks.map(link => ({ ...link, similarity: 1.0, isNeighbor: true })));
+    }
+    
+    // Add hover links for preview
+    if (hoverLinks) {
+      allLinks.push(...hoverLinks.map(link => ({ ...link, similarity: 1.0, isHover: true })));
+    }
+    
+    return { nodes, links: allLinks };
+  }, [nodes, neighborLinks, hoverLinks]);
+
+  // Focus camera on selected node
+  useEffect(() => {
+    if (selectedNode && graphRef.current) {
+      const node = graphData.nodes.find((n: any) => n.primary_accession === selectedNode.primary_accession);
+      if (node && typeof node.x === 'number' && typeof node.y === 'number' && typeof node.z === 'number') {
+        // Smoothly move camera to focus on selected node
+        graphRef.current.cameraPosition(
+          { x: node.x, y: node.y, z: node.z + 200 }, // Position camera 200 units away
+          { x: node.x, y: node.y, z: node.z },       // Look at the node
+          1000 // Animation duration (ms)
+        );
+      }
+    }
+  }, [selectedNode, graphData]);
+
+  // Add lighting to scene once graph is ready
+  useEffect(() => {
+    if (graphRef.current) {
+      const scene = graphRef.current.scene();
+      
+      // Clear existing lights to avoid duplicates
+      scene.children = scene.children.filter((child: any) => !(child instanceof THREE.Light));
+      
+      // Ambient light for overall illumination
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+      
+      // Directional light for shadows and depth
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(200, 500, 300);
+      scene.add(directionalLight);
+      
+      // Soft fill light from opposite direction
+      const fillLight = new THREE.DirectionalLight(0x4080ff, 0.3);
+      fillLight.position.set(-200, -300, -200);
+      scene.add(fillLight);
+    }
+  }, [graphRef.current]);
+
+  return (
+    <div ref={containerRef} className="w-full h-full">
+      <ForceGraph3D
+        ref={graphRef}
+        width={size.width}
+        height={size.height}
+        graphData={graphData}
+        nodeColor={(node: any) => {
+          const isSelected = node.primary_accession === selectedNode?.primary_accession;
+          const isHovered = node.primary_accession === hoveredNode?.primary_accession;
+          
+          if (isSelected) return '#dc2626';
+          if (isHovered) return '#ec4899';
+          
+          const confidence = node.confidence_score ?? 0.5; // Handle null with nullish coalescing
+          if (node.is_fallback) return '#f59e0b';
+          if (confidence < 0.5) return '#f97316';
+          if (confidence < 0.8) return '#3b82f6';
+          return '#10b981';
+        }}
+        nodeOpacity={(node: any) => {
+          const isSelected = node.primary_accession === selectedNode?.primary_accession;
+          const isHovered = node.primary_accession === hoveredNode?.primary_accession;
+          const isNeighbor = neighborLinks?.some(
+            (link: any) => link.source === node.primary_accession || link.target === node.primary_accession
+          );
+          
+          if (isSelected || isHovered) return 0.95;
+          if (isNeighbor) return 0.85;
+          
+          // Dim non-neighbors when hovering
+          if (hoveredNode && hoveredNode.primary_accession !== node.primary_accession) {
+            return 0.2;
+          }
+          
+          return 0.75;
+        }}
+        nodeVal={(node: any) => {
+          const confidence = node.confidence_score ?? 0.5;
+          const baseSize = 4 + (confidence * 8);  // Smaller nodes: 4-12 range
+          const isHovered = node.primary_accession === hoveredNode?.primary_accession;
+          return isHovered ? baseSize * 1.2 : baseSize;
+        }}
+        nodeResolution={12}  // Lower resolution for better performance
+        linkColor={(link: any) => {
+          if (link.isNeighbor) return '#06b6d4'; // Cyan for selected neighbors
+          if (link.isHover) return '#a78bfa'; // Purple for hover neighbors
+          return '#e2e8f0'; // Light gray for clusters
+        }}
+        linkOpacity={(link: any) => {
+          if (link.isNeighbor) return 0.8;
+          if (link.isHover) return 0.6;
+          return 0.1;
+        }}
+        linkWidth={(link: any) => {
+          if (link.isNeighbor) return 2;  // Thinner links
+          if (link.isHover) return 1.5;
+          return 0.3;
+        }}
+        backgroundColor="#f8fafc"
+        showNavInfo={false}
+        onNodeClick={(node: any) => selectNode(node)}
+        onNodeHover={(node: any) => setHoveredNode(node)}
+        nodeLabel={(n: any) => `${n.protein_name} | ${n.organism} | ${(n.confidence_score * 100).toFixed(0)}%`}
+        nodeResolution={32}
+        linkDirectionalParticles={(link: any) => (link.isNeighbor || link.isHover) ? 2 : 0}
+        linkDirectionalParticleSpeed={0.005}
+        enableNodeDrag={true}
+        // PHYSICS CALIBRATION - Spread nodes out naturally
+        d3AlphaDecay={0.03}           // Faster settling
+        d3VelocityDecay={0.4}         // Moderate friction
+        d3AlphaMin={0.001}            // Fine-grained refinement
+        warmupTicks={0}               // NO warmup - immediate render
+        cooldownTicks={0}             // Natural simulation
+        cooldownTime={0}              // No artificial delay
+        // FORCE PARAMETERS - Strong repulsion, weak links (only for neighbor/hover)
+        d3Force={{
+          charge: { strength: -300, distanceMax: 500 },  // Very strong repulsion
+          link: { distance: 80, strength: 0.5 },          // Weak links (only neighbor/hover anyway)
+          center: { strength: 0.05 }                      // Very weak centering
+        }}
+        cameraPosition={{ x: 0, y: 0, z: 700 }}
+      />
+    </div>
+  );
+}

@@ -1,0 +1,198 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { GitCompare, X, TrendingUp, MousePointer } from 'lucide-react';
+import { useStore } from '@/lib/store';
+import { api } from '@/lib/api';
+
+export default function ComparisonMode() {
+  const { nodes, selectNode, comparisonMode, setComparisonMode, selectedNode } = useStore();
+  const [protein1, setProtein1] = useState<any>(null);
+  const [protein2, setProtein2] = useState<any>(null);
+  const [similarity, setSimilarity] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [selectingFor, setSelectingFor] = useState<'protein1' | 'protein2' | null>(null);
+
+  // Auto-populate from selected node when in selection mode
+  useEffect(() => {
+    if (selectingFor && selectedNode) {
+      if (selectingFor === 'protein1') {
+        setProtein1(selectedNode);
+        setSelectingFor(null);
+      } else if (selectingFor === 'protein2') {
+        setProtein2(selectedNode);
+        setSelectingFor(null);
+      }
+    }
+  }, [selectedNode, selectingFor]);
+
+  // Fetch similarity from backend when both proteins are selected
+  useEffect(() => {
+    if (protein1 && protein2) {
+      setLoading(true);
+      api.getSimilarity(protein1.primary_accession, protein2.primary_accession)
+        .then(score => setSimilarity(score))
+        .catch(() => setSimilarity(0))
+        .finally(() => setLoading(false));
+    } else {
+      setSimilarity(0);
+    }
+  }, [protein1, protein2]);
+
+  if (!comparisonMode) {
+    return null; // Button is now in SearchFilterBar
+  }
+
+  return (
+    <div className="fixed top-20 right-6 z-40 bg-white/95 backdrop-blur-xl border border-slate-200 rounded-2xl shadow-2xl w-96 pointer-events-auto mt-16">
+      {/* Header */}
+      <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <GitCompare className="w-4 h-4 text-red-600" />
+          <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
+            Protein Comparison
+          </span>
+        </div>
+        <button onClick={() => setComparisonMode(false)} className="text-slate-400 hover:text-slate-600">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Protein Selectors */}
+      <div className="p-4 space-y-3">
+        {/* Protein 1 */}
+        <div>
+          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+            Protein A
+          </label>
+          <div className="flex gap-2">
+            <select
+              value={protein1?.primary_accession || ''}
+              onChange={(e) => setProtein1(nodes.find(n => n.primary_accession === e.target.value))}
+              className="flex-1 text-[10px] bg-slate-50 border border-slate-200 rounded px-3 py-2 outline-none focus:border-red-500 cursor-pointer"
+              disabled={selectingFor === 'protein1'}
+            >
+              <option value="">Select protein...</option>
+              {nodes.map((node, idx) => (
+                <option key={`protein-a-${node.primary_accession}-${idx}`} value={node.primary_accession}>
+                  {node.protein_name} ({node.primary_accession})
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setSelectingFor(selectingFor === 'protein1' ? null : 'protein1')}
+              className={`px-3 py-2 rounded text-[10px] font-bold transition-all ${
+                selectingFor === 'protein1' 
+                  ? 'bg-red-600 text-white' 
+                  : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+              }`}
+              title="Click a node in the graph"
+            >
+              <MousePointer className="w-3 h-3" />
+            </button>
+          </div>
+          {selectingFor === 'protein1' && (
+            <p className="text-[9px] text-red-600 mt-1 font-medium">Click a node in the graph to select...</p>
+          )}
+        </div>
+
+        {/* Protein 2 */}
+        <div>
+          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+            Protein B
+          </label>
+          <div className="flex gap-2">
+            <select
+              value={protein2?.primary_accession || ''}
+              onChange={(e) => setProtein2(nodes.find(n => n.primary_accession === e.target.value))}
+              className="flex-1 text-[10px] bg-slate-50 border border-slate-200 rounded px-3 py-2 outline-none focus:border-red-500 cursor-pointer"
+              disabled={selectingFor === 'protein2'}
+            >
+              <option value="">Select protein...</option>
+              {nodes.map((node, idx) => (
+                <option key={`protein-b-${node.primary_accession}-${idx}`} value={node.primary_accession}>
+                  {node.protein_name} ({node.primary_accession})
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setSelectingFor(selectingFor === 'protein2' ? null : 'protein2')}
+              className={`px-3 py-2 rounded text-[10px] font-bold transition-all ${
+                selectingFor === 'protein2' 
+                  ? 'bg-red-600 text-white' 
+                  : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+              }`}
+              title="Click a node in the graph"
+            >
+              <MousePointer className="w-3 h-3" />
+            </button>
+          </div>
+          {selectingFor === 'protein2' && (
+            <p className="text-[9px] text-red-600 mt-1 font-medium">Click a node in the graph to select...</p>
+          )}
+        </div>
+
+        {/* Similarity Score */}
+        {protein1 && protein2 && (
+          <div className="pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                Vector Similarity
+              </span>
+              <div className="flex items-center gap-1">
+                <TrendingUp className="w-3 h-3 text-red-600" />
+                <span className="text-lg font-black text-red-600">
+                  {loading ? '...' : `${(similarity * 100).toFixed(1)}%`}
+                </span>
+              </div>
+            </div>
+            
+            {/* Progress Bar */}
+            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-500 ${
+                  similarity > 0.8 ? 'bg-emerald-500' :
+                  similarity > 0.5 ? 'bg-blue-500' : 'bg-orange-500'
+                }`}
+                style={{ width: `${similarity * 100}%` }}
+              />
+            </div>
+
+            {/* Comparison Stats */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="bg-slate-50 p-2 rounded">
+                <div className="text-[8px] text-slate-400 font-bold uppercase mb-0.5">Protein A</div>
+                <div className="text-[10px] font-bold text-slate-900">
+                  {(protein1.confidence_score * 100).toFixed(0)}% conf
+                </div>
+                <div className="text-[9px] text-slate-500 truncate">{protein1.organism}</div>
+              </div>
+              <div className="bg-slate-50 p-2 rounded">
+                <div className="text-[8px] text-slate-400 font-bold uppercase mb-0.5">Protein B</div>
+                <div className="text-[10px] font-bold text-slate-900">
+                  {(protein2.confidence_score * 100).toFixed(0)}% conf
+                </div>
+                <div className="text-[9px] text-slate-500 truncate">{protein2.organism}</div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => selectNode(protein1)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-bold py-2 rounded transition-colors"
+              >
+                VIEW A
+              </button>
+              <button
+                onClick={() => selectNode(protein2)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-bold py-2 rounded transition-colors"
+              >
+                VIEW B
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

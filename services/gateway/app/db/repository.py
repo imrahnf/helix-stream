@@ -1,46 +1,20 @@
-# services/gateway/app/db/repository.py
-
 """
-================================================================================
-MODULE: DatabasePool, DatabaseContext, EmbeddingRepository
-PURPOSE: Abstraction layer for PostgreSQL operations with connection pooling,
-         HNSW vector similarity search, and transactional consistency.
-
-KEY RESPONSIBILITIES:
-  - Manage reusable PostgreSQL connection pool (1-20 concurrent connections)
-  - Store embeddings + metadata with ON CONFLICT logic (unique on
-    primary_accession + model_id)
-  - Execute HNSW cosine distance queries for nearest-neighbor search
-  - Handle JSON serialization for pdb_ids and binding_sites
-  - Fallback accession lookup (exact model match → any model)
-  - Batch retrieval for dashboard initialization (get_all_summaries)
-
-DATA FLOW:
-  INPUT:
-    - store_rich_embedding: seq_hash, model_id, vector (1280-D float list),
-      biological_data (dict), confidence_score, is_fallback flag
-    - find_similar: query vector, model_id, limit (K)
-    - get_embedding_by_accession: accession string, model_id
-  OUTPUT:
-    - Persisted rows in vectors_esm2_650m or vectors_esm2_8m (HNSW indexed)
-    - Search results: accession, protein_name, organism, is_fallback, distance
-    - Metadata summaries: accession, name, organism, model_id
-
-INFRASTRUCTURE ROLE:
-  The persistent data layer. Maintains the ground truth of all ingested
-  proteins, their embeddings, and 3D structure links. Connection pooling ensures
-  the macOS Gateway can handle concurrent ingest/search requests without
-  connection exhaustion.
-
-ERROR HANDLING STRATEGY:
-  - ON CONFLICT Logic: Handles duplicate accession&model ingestions by
-    updating
-  - Fallback Queries: If exact model_id not found, retrieve any model for
-    the accession (graceful degradation for cross-model lookups)
-  - Connection Pool: Raises exception if pool exhausted (set pool max=20)
-  - SQL Injection Prevention: Use psycopg2.sql.Identifier for dynamic table
-    names; parameterized queries for all user input
-================================================================================
+File Overview: PostgreSQL data access layer with pooling, vector storage, and similarity utilities for HelixStream.
+Responsibilities:
+- Provide pooled connections and context-managed repository instances.
+- Upsert embedding metadata and vectors into model-specific pgvector tables; serialize JSON fields.
+- Run pgvector similarity search, accession lookups with model fallback, and bulk summaries.
+- Precompute and store neighbor edges plus positional/coverage checks for graph features.
+Data Flow:
+- Inputs: vectors, sequence hashes, metadata dicts, accession/model queries, k/limit parameters.
+- Outputs: committed rows in embedding_metadata/vectors/graph tables and structured query results.
+System Integration:
+- Central DB layer for FastAPI services; interacts with pgvector operators, graph_positions, and graph_edges tables.
+Technical Details:
+- Uses psycopg2 SimpleConnectionPool (1-20), sql.Identifier for dynamic table names, and distance-to-similarity conversion for edges.
+- Supports both 650M and 8M vector tables; handles JSON decoding for pdb_ids/binding_sites on read.
+Future Considerations:
+- Add transaction scopes for multi-step writes, pool config validation, and indexing tuned to search filters.
 """
 
 import psycopg2
@@ -84,8 +58,9 @@ class EmbeddingRepository:
                 (sequence_hash, model_id, confidence_score, is_fallback, sequence_text, 
                  primary_accession, protein_name, organism, function_text, binding_sites, pdb_ids)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (primary_accession, model_id) DO UPDATE 
+                ON CONFLICT (primary_accession) DO UPDATE 
                 SET sequence_hash = EXCLUDED.sequence_hash,
+                    model_id = EXCLUDED.model_id,
                     confidence_score = EXCLUDED.confidence_score,
                     is_fallback = EXCLUDED.is_fallback,
                     protein_name = EXCLUDED.protein_name,
@@ -170,3 +145,205 @@ class EmbeddingRepository:
                 LIMIT %s
             """, (limit,))
             return cur.fetchall()
+
+    # --- // PERFORMANCE OPTIMIZATION METHODS    
+
+    def precompute_neighbors_for_protein(self, accession: str, model_id: str, k: int = 10):
+        # Pre compute and store KNN neighbors for a  protein. Uses Postgres HNSW index for fast similarity search
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Get the vector for this protein
+        table_name = 'vectors_esm2_650m' if '650M' in model_id else 'vectors_esm2_8m'
+        
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Fetch vector
+            query_vector = sql.SQL("""
+                SELECT v.vector
+                FROM {} v
+                JOIN embedding_metadata m ON v.metadata_id = m.id
+                WHERE m.primary_accession = %s AND m.model_id = %s
+            """).format(sql.Identifier(table_name))
+            
+            cur.execute(query_vector, (accession, model_id))
+            row = cur.fetchone()
+            
+            if not row or not row['vector']:
+                logger.warning(f"No vector found for {accession} ({model_id})")
+                return 0
+            
+            vector = row['vector']
+            
+            # Find top K+1 similar proteins (including self, which we'll filter)
+            neighbors = self.find_similar(vector, model_id, limit=k+1)
+            
+            # Store edges in graph_edges table
+            stored_count = 0
+            rank = 1
+            
+            for neighbor in neighbors:
+                # Skip self
+                if neighbor['primary_accession'] == accession:
+                    continue
+                
+                # Calculate similarity from distance (distance ∈ [0,2], similarity ∈ [0,1])
+                similarity = 1.0 - float(neighbor['distance'])
+                
+                try:
+                    cur.execute("""
+                        INSERT INTO graph_edges 
+                        (source_accession, target_accession, similarity, rank, model_id)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (source_accession, target_accession, model_id)
+                        DO UPDATE SET 
+                            similarity = EXCLUDED.similarity,
+                            rank = EXCLUDED.rank,
+                            created_at = NOW()
+                    """, (accession, neighbor['primary_accession'], similarity, rank, model_id))
+                    
+                    rank += 1
+                    stored_count += 1
+                    
+                    if stored_count >= k:
+                        break
+                        
+                except Exception as e:
+                    logger.error(f"Failed to store edge {accession} -> {neighbor['primary_accession']}: {e}")
+                    continue
+            
+            self.conn.commit()
+            logger.debug(f"Stored {stored_count} neighbors for {accession}")
+            return stored_count
+    
+    def precompute_all_neighbors(self, model_id: str, k: int = 10):
+        # Batch pre compute neighbors for all proteins in a model
+        # This is typically run once during initialization or after bulk ingestion
+
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Get all accessions for this model
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT primary_accession 
+                FROM embedding_metadata 
+                WHERE model_id = %s AND primary_accession IS NOT NULL
+            """, (model_id,))
+            
+            accessions = [row[0] for row in cur.fetchall()]
+        
+        if not accessions:
+            logger.warning(f"No proteins found for model {model_id}")
+            return 0
+        
+        logger.info(f"Pre-computing neighbors for {len(accessions)} proteins (k={k})...")
+        
+        total_edges = 0
+        for i, accession in enumerate(accessions):
+            try:
+                count = self.precompute_neighbors_for_protein(accession, model_id, k)
+                total_edges += count
+                
+                if (i + 1) % 10 == 0:
+                    logger.info(f"  Progress: {i+1}/{len(accessions)} proteins processed")
+                    
+            except Exception as e:
+                logger.error(f"Failed to compute neighbors for {accession}: {e}")
+                continue
+        
+        logger.info(f"✓ Neighbor pre-computation complete: {total_edges} edges created")
+        return total_edges
+    
+    def get_precomputed_neighbors(self, accession: str, model_id: str, limit: int = 10):
+        # Retrieve pre-computed neighbors from graph_edges table
+
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT 
+                    m.primary_accession,
+                    m.protein_name,
+                    m.organism,
+                    m.confidence_score,
+                    m.is_fallback,
+                    e.similarity,
+                    e.rank
+                FROM graph_edges e
+                JOIN embedding_metadata m ON e.target_accession = m.primary_accession
+                WHERE e.source_accession = %s 
+                  AND e.model_id = %s
+                ORDER BY e.rank ASC
+                LIMIT %s
+            """, (accession, model_id, limit))
+            
+            return cur.fetchall()
+    
+    def get_all_accessions(self, model_id: str):
+        # Get list of all accessions for a model
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT primary_accession 
+                FROM embedding_metadata 
+                WHERE model_id = %s AND primary_accession IS NOT NULL
+            """, (model_id,))
+            return [row[0] for row in cur.fetchall()]
+    
+    def get_vector_by_accession(self, accession: str, model_id: str):
+        # Get raw vector for an accession
+        table_name = 'vectors_esm2_650m' if '650M' in model_id else 'vectors_esm2_8m'
+        
+        with self.conn.cursor() as cur:
+            query = sql.SQL("""
+                SELECT v.vector
+                FROM {} v
+                JOIN embedding_metadata m ON v.metadata_id = m.id
+                WHERE m.primary_accession = %s AND m.model_id = %s
+            """).format(sql.Identifier(table_name))
+            
+            cur.execute(query, (accession, model_id))
+            row = cur.fetchone()
+            return row[0] if row else None
+    
+    def check_positions_exist(self, model_id: str, method: str = 'umap') -> int:
+        # Check if 3D positions are computed for this model
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) 
+                FROM graph_positions 
+                WHERE model_id = %s AND method = %s
+            """, (model_id, method))
+            return cur.fetchone()[0]
+    
+    def check_edges_exist(self, model_id: str) -> int:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(DISTINCT source_accession) 
+                FROM graph_edges 
+                WHERE model_id = %s
+            """, (model_id,))
+            return cur.fetchone()[0]
+    
+    def get_proteins_without_positions(self, model_id: str = "esm2_t33_650M_UR50D") -> int:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(DISTINCT m.primary_accession)
+                FROM embedding_metadata m
+                JOIN vectors_esm2_650m v ON m.id = v.metadata_id
+                LEFT JOIN graph_positions gp ON m.primary_accession = gp.accession 
+                    AND gp.model_id = %s
+                WHERE gp.accession IS NULL 
+                    AND m.model_id = %s
+                    AND v.vector IS NOT NULL
+            """, (model_id, model_id))
+            return cur.fetchone()[0]
+    
+    def get_proteins_without_edges(self, model_id: str = "esm2_t33_650M_UR50D") -> int:
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(DISTINCT gp.accession)
+                FROM graph_positions gp
+                LEFT JOIN graph_edges ge ON gp.accession = ge.source_accession 
+                    AND ge.model_id = %s
+                WHERE gp.model_id = %s 
+                    AND ge.source_accession IS NULL
+            """, (model_id, model_id))
+            return cur.fetchone()[0]

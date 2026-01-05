@@ -19,3 +19,9 @@ torch
 transformers
 httpx
 python-multipart
+biopython==1.81
+
+# Performance optimization dependencies
+numpy>=1.24.0
+scikit-learn>=1.3.0
+umap-learn>=0.5.5

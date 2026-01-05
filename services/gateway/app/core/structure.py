@@ -1,45 +1,17 @@
-# services/gateway/app/core/structure.py
-
 """
-================================================================================
-MODULE: StructureOrchestrator
-PURPOSE: Generate 3D structure manifests (PDB URLs, annotations) for frontend
-         visualization via 3Dmol and AlphaFold integration.
-
-KEY RESPONSIBILITIES:
-  - Select primary structure source: RCSB PDB (if available) or AlphaFold DB
-  - Generate fully qualified PDB file URLs for download/rendering
-  - Compile residue-level annotations (binding sites, active sites, cleavage)
-  - Build manifests linking embeddings to 3D structure data
-
-DATA FLOW:
-  INPUT:
-    - Protein metadata dict from embedding_metadata table:
-      * primary_accession (UniProt ID or MAN-<hash8>)
-      * pdb_ids (list of RCSB PDB codes, e.g., ["1TRZ", "2HIU"])
-      * binding_sites (JSON: [{pos, label}, ...])
-      * protein_name, organism, function_text, confidence_score
-  OUTPUT:
-    - Manifest dict with structure + annotations + metadata:
-      {
-        "structure": {"id", "source", "url", "is_verified", "all_pdb_ids"},
-        "annotations": {"residue_highlights": [...]},
-        "metadata": {"name", "organism", "function", "confidence"}
-      }
-
-INFRASTRUCTURE ROLE:
-  Bridges the GPU inference pipeline to the frontend's 3D visualization layer.
-  Ensures every protein has a structure (verified PDB or AlphaFold prediction),
-  enabling interactive exploration of structural features alongside sequence
-  similarity clustering.
-
-ERROR HANDLING STRATEGY:
-  - Fallback Sources: RCSB → AlphaFold (graceful degradation)
-  - Verification Flag: is_verified=true for experimental PDB, false for
-    computationally predicted AlphaFold models
-  - URL Correctness: Validate accession format (4 chars for PDB, Uniprot ID
-    for AlphaFold) before generating URLs
-================================================================================
+File Overview: Structure manifest builder for mapping proteins to 3D resources for HelixStream visualization.
+Responsibilities:
+- Choose primary structure source (RCSB PDB first, else AlphaFold) and build download/render URLs.
+- Package residue-level highlights and metadata into a manifest for frontend 3D viewers.
+Data Flow:
+- Inputs: protein metadata dict (primary_accession, pdb_ids, binding_sites, names, organism, function, confidence, sequence).
+- Outputs: manifest dict with structure details, annotations, and metadata for rendering.
+System Integration:
+- Feeds manifests to frontend components that render via 3Dmol/AlphaFold viewers; relies on data from embedding_metadata rows.
+Technical Details:
+- Sets verification flag based on source (PDB vs AlphaFold) and preserves all PDB IDs; no external calls at generation time.
+Future Considerations:
+- Validate accession formats/URLs and enrich annotations (domains, variants) as data becomes available.
 """
 
 from typing import Dict, Any
@@ -68,6 +40,7 @@ class StructureOrchestrator:
                 "name": protein_data.get("protein_name"),
                 "organism": protein_data.get("organism"),
                 "function": protein_data.get("function_text"),
-                "confidence": protein_data.get("confidence_score")
+                "confidence": protein_data.get("confidence_score"),
+                "sequence": protein_data.get("sequence_text", "")
             }
         }
