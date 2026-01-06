@@ -42,13 +42,6 @@ graph TB
     GW --> TC
     TC --> GPU
     GW --> CPU
-    
-    style FE fill:#e1f5fe
-    style GW fill:#f3e5f5
-    style DB fill:#e8f5e8
-    style CPU fill:#fff3e0
-    style TC fill:#fce4ec
-    style GPU fill:#e8eaf6
 ```
 
 ### Data Flow & Functionality
@@ -93,9 +86,6 @@ The system ingests protein metadata directly from the [UniProtKB REST API](https
 - **Validation**: Accessions are validated against UniProt's [canonical format](https://www.uniprot.org/help/accession_numbers) (`/[A-Z0-9]{6,10}/`).
 - **Feature Extraction**: Automatically parses `ft_binding`, `ft_site` features for visualization.
 
-![UniProt Ingestion Flow](screenshots/uniprot-flow.png)
-*Detailed view of the metadata ingestion pipeline showing the extraction of functional annotations.*
-
 ### 2. Structural Source Hierarchy
 To ensure the highest fidelity 3D visualization, the `StructureOrchestrator` follows a strict priority logic:
 1.  **Experimental Structures**: [RCSB PDB](https://www.rcsb.org/) (X-ray crystallography/Cryo-EM) is preferred for verified coordinates.
@@ -112,13 +102,13 @@ All FASTA inputs undergo rigorous cleaning before inference:
 ## System Reliability & Integrity
 
 ### Reliability: Dual-Inference Engine
-HelixStream employs a sophisticated **Dual-Inference Engine** that prioritizes high-accuracy remote embeddings (ESM2-650M on Windows GPU) while maintaining resilience. The system automatically detects network partitions or worker failures and seamlessly degrades to a local CPU model (ESM2-8M on Mac), ensuring **100% system uptime** for critical user flows.
+- HelixStream employs a sophisticated **Dual-Inference Engine** that prioritizes high-accuracy remote embeddings (ESM2-650M on Windows GPU) while maintaining resilience. The system automatically detects network partitions or worker failures and seamlessly degrades to a local CPU model (ESM2-8M on Mac), ensuring **100% system uptime** for critical user flows.
 
 ### Data Integrity: Vector Deduplication
-To prevent redundant storage of expensive 1280-dimensional vectors, the system utilizes **SHA-256 hashing** of normalized protein sequences. This content-addressable approach ensures that identical sequences map to the same vector embedding, significantly optimizing storage and index performance.
+- To prevent redundant storage of expensive 1280-dimensional vectors, the system utilizes **SHA-256 hashing** of normalized protein sequences. This content-addressable approach ensures that identical sequences map to the same vector embedding, significantly optimizing storage and index performance.
 
 ### Worker Health: Distributed Monitoring
-The Gateway service implements a robust **gRPC health-check pattern** (standard `grpc.health`) to continuously heartbeat the Windows GPU worker. This active monitoring allows the orchestrator to trigger failover modes within seconds of a connection drop, rather than waiting for request timeouts.
+- The Gateway service implements a robust **gRPC health-check pattern** (standard `grpc.health`) to continuously heartbeat the Windows GPU worker. This active monitoring allows the orchestrator to trigger failover modes within seconds of a connection drop, rather than waiting for request timeouts.
 
 ---
 
