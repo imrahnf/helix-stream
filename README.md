@@ -56,22 +56,22 @@ graph TB
 
 ---
 
-## Screenshots
+## Interactive Showcase
 
 ### 3D Protein Network Visualization
-![3D Protein Graph](screenshots/protein-graph.png)
+![3D Protein Graph](docs/3d_protein_graph.gif)
 *Interactive force-directed graph showing protein relationships in 3D space, with nodes colored by embedding confidence.*
 
 ### Molecular Structure Viewer
-![Structure Viewer](screenshots/structure-viewer.png)
+![Structure Viewer](docs/structure_viewer.gif)
 *Integrated 3Dmol.js viewer displaying PDB structures with highlighted binding sites and annotations.*
 
 ### Search & Discovery Interface
-![Discovery Console](screenshots/discovery-console.png)
-*Real-time search interface for ingesting proteins from UniProt or manual FASTA sequences.*
+![Discovery Console](docs/discovery_console.gif)
+*Real-time search interface for ingesting proteins from UniProt or manual FASTA sequences and showcasing nearest neighbours.*
 
 ### Comparison Mode
-![Protein Comparison](screenshots/protein-comparison.png)
+![Protein Comparison](docs/comparison.gif)
 *Side-by-side comparison showing vector similarity, sequence alignment, and structural overlays.*
 
 ---
