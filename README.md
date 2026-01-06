@@ -2,7 +2,7 @@
 
 > Real-time protein structure discovery through high-dimensional vector search and interactive 3D visualization.
 
-Explore protein sequence relationships in a unified 3D space using ESM2 transformers, pgvector similarity search, and React Three Fiber.
+Explore protein sequence relationships in a unified 3D space using ESM2 transformers and pgvector similarity search in Next.js.
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql) ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker) ![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=java) ![FastAPI](https://img.shields.io/badge/FastAPI-0.127%2B-009688?style=for-the-badge&logo=fastapi) ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 
@@ -10,7 +10,7 @@ Explore protein sequence relationships in a unified 3D space using ESM2 transfor
 
 ## Core Features
 
-- **3D Protein Exploration** - Interactive force-directed graph of protein relationships using React Three Fiber.
+- **3D Protein Exploration** - Interactive force-directed graph of protein relationships.
 - **Vector Similarity Search** - High-performance similarity search using pgvector and HNSW indexing.
 - **Hybrid Inference Pipeline** - Automatic GPU-to-CPU failover for ESM2 embedding computation.
 - **Molecular Visualization** - Integrated 3Dmol.js viewer for PDB and AlphaFold structures.
@@ -26,7 +26,7 @@ HelixStream operates as a distributed system with hybrid inference capabilities,
 ```mermaid
 graph TB
     subgraph "MacBook (Main Device)"
-        FE[Frontend<br/>Next.js + React Three Fiber]
+        FE[Frontend<br/>Next.js]
         GW[Gateway<br/>FastAPI]
         DB[(PostgreSQL<br/>+ pgvector)]
         CPU[Worker CPU<br/>ESM2-8M Fallback]
@@ -135,7 +135,6 @@ HelixStream was architected to solve specific challenges in local bioinformatics
 
 ### Frontend
 - Next.js
-- React Three Fiber
 - 3Dmol.js
 - Zustand
 
